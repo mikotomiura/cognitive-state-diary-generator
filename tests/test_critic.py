@@ -462,6 +462,62 @@ class TestCriticEvaluate:
         )
 
 
+class TestCriticEvaluateFullPrevDiary:
+    """Critic.evaluate_full の prev_diary 転送テスト."""
+
+    @pytest.mark.asyncio()
+    async def test_prev_diary_forwarded_to_pipeline(
+        self,
+        critic: Critic,
+        mock_llm_client: LLMClient,
+        initial_state: CharacterState,
+        sample_event: DailyEvent,
+        pass_score: CriticScore,
+    ) -> None:
+        """evaluate_full に prev_diary を渡すと trigram overlap が計算される."""
+        curr_state = initial_state.model_copy(
+            update={"stress": 0.0, "motivation": 0.3, "fatigue": 0.05},
+        )
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = pass_score
+
+        diary = "あいうえおかきくけこ" * 100
+        prev_diary = "あいうえおかきくけこ" * 100  # 完全一致
+
+        result = await critic.evaluate_full(
+            initial_state, curr_state, diary, sample_event, prev_diary=prev_diary,
+        )
+
+        # trigram overlap が計算されている
+        assert result.rule_based.details.get("trigram_overlap") is not None
+        overlap = result.rule_based.details["trigram_overlap"]
+        assert isinstance(overlap, float)
+        assert overlap > 0.5
+
+    @pytest.mark.asyncio()
+    async def test_no_prev_diary_skips_overlap(
+        self,
+        critic: Critic,
+        mock_llm_client: LLMClient,
+        initial_state: CharacterState,
+        sample_event: DailyEvent,
+        pass_score: CriticScore,
+    ) -> None:
+        """prev_diary=None の場合、trigram overlap はスキップされる."""
+        curr_state = initial_state.model_copy(
+            update={"stress": 0.0, "motivation": 0.3, "fatigue": 0.05},
+        )
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = pass_score
+
+        diary = "あ" * 1000
+        result = await critic.evaluate_full(
+            initial_state, curr_state, diary, sample_event,
+        )
+
+        assert "trigram_overlap" not in result.rule_based.details
+
+
 class TestCriticPromptLoading:
     """プロンプトファイルの読み込みテスト."""
 

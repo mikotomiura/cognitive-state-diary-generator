@@ -95,7 +95,7 @@ class AnthropicClient(LLMClient):
             model: 使用する LLM モデル名 (例: "claude-sonnet-4-20250514")。
             base_url: API のベース URL。
         """
-        self._client = AsyncAnthropic(api_key=api_key, base_url=base_url)
+        self._client = AsyncAnthropic(api_key=api_key, base_url=base_url, max_retries=5)
         self._model = model
         logger.debug("AnthropicClient initialized: model=%s, base_url=%s", model, base_url)
 

@@ -261,7 +261,7 @@ development-guidelines.md    ← 「どう運用するか」
 | `actor.py` | Phase 1 (状態遷移) と Phase 2 (コンテンツ生成) の実行。プロンプト読み込み・展開 | `schemas`, `llm_client`, `config` | `test_actor.py` |
 | `critic.py` | Phase 3 (評価) の実行。`expected_delta` / `deviation` の算出、Pass/Reject判定 | `schemas`, `llm_client`, `config` | `test_critic.py` |
 | `pipeline.py` | Day単位のループ、リトライ制御、Self-Healing、memory_buffer管理、ログ収集 | `actor`, `critic`, `schemas`, `config` | `test_pipeline.py` |
-| `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` とOpenAI実装 `OpenAIClient` | `openai`, `pydantic` | `test_actor.py`(モック) |
+| `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` と Anthropic Claude 実装 `AnthropicClient` | `anthropic`, `pydantic` | `test_actor.py`(モック) |
 
 ### 4.4 モジュール間の依存関係図
 
@@ -573,7 +573,7 @@ allowed-tools: (許可するツールのリスト)
 
 | カテゴリ | 規則 | 例 |
 |---|---|---|
-| クラス名 | パスカルケース (`PascalCase`) | `CharacterState`, `CriticScore`, `OpenAIClient` |
+| クラス名 | パスカルケース (`PascalCase`) | `CharacterState`, `CriticScore`, `AnthropicClient` |
 | 関数名・メソッド名 | スネークケース (`snake_case`) | `update_state()`, `compute_deviation()` |
 | 変数名 | スネークケース | `current_state`, `retry_count` |
 | 定数 | アッパースネークケース (`UPPER_SNAKE_CASE`) | `EMOTION_SENSITIVITY`, `MAX_RETRIES` |

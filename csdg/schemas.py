@@ -199,6 +199,13 @@ class Memory(BaseModel):
     long_term: LongTermMemory = Field(default_factory=LongTermMemory)
 
 
+class MemoryExtraction(BaseModel):
+    """LLM が抽出した長期記憶の信念・テーマ。"""
+
+    new_beliefs: list[str] = Field(default_factory=list, description="追加すべき信念")
+    new_themes: list[str] = Field(default_factory=list, description="追加すべきテーマ")
+
+
 class LayerScore(BaseModel):
     """各層の個別スコア (デバッグ用)。
 

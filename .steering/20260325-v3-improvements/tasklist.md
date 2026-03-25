@@ -24,7 +24,19 @@
 - [x] docs/architecture.md — Veto権、逆推定一致チェック、LLMDeltaResponse を反映
 - [x] docs/repository-structure.md — schemas.py の新型を追記
 
-## 検証結果
-- 277テスト全パス (259既存 + 18新規)
+## 追加修正タスク (残課題修正)
+- [x] prev_diary を pipeline → critic に受け渡し
+- [x] LLMDeltaResponse を actor.py に統合 (ヒューリスティック reason 生成)
+- [x] llm_delta_reason を CriticLogEntry に記録
+- [x] prompt_hashes の実装
+- [x] architecture.md / repository-structure.md を Anthropic 実装に同期
+- [x] Memory LLM 抽出の実装 (Prompt_MemoryExtract.md + MemoryExtraction スキーマ)
+- [x] 実パイプライン実行 + スコア分布検証
+
+## 検証結果 (最終)
+- 289テスト全パス (259既存 + 30新規)
 - ruff check csdg/ クリーン
-- mypy strict: 既存3エラーのみ (pydantic-settings/matplotlib stubs)
+- mypy strict: no issues found in 14 source files
+- 実パイプライン: 7/7 Day 完了, リトライ1回, フォールバック0回
+- emotional_plausibility: ユニーク値2 (4, 5) — v3改善が機能
+- Day 6 で Veto (persona_deviation) 発動 → リトライで修正確認

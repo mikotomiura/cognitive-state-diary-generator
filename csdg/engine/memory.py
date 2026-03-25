@@ -9,9 +9,10 @@ advice.md タスク3 に準拠する.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from csdg.schemas import LongTermMemory, Memory, ShortTermMemory, TurningPoint
+from csdg.schemas import LongTermMemory, Memory, MemoryExtraction, ShortTermMemory, TurningPoint
 
 if TYPE_CHECKING:
     from csdg.engine.llm_client import LLMClient
@@ -35,12 +36,14 @@ class MemoryManager:
         self,
         window_size: int = 3,
         memory: Memory | None = None,
+        prompts_dir: Path | None = None,
     ) -> None:
         self._window_size = window_size
         self._memory = memory or Memory(
             short_term=ShortTermMemory(window_size=window_size),
             long_term=LongTermMemory(),
         )
+        self._prompts_dir = prompts_dir or Path("prompts")
 
     @property
     def memory(self) -> Memory:
@@ -172,10 +175,49 @@ class MemoryManager:
     ) -> None:
         """LLM を使って信念・テーマを抽出する.
 
-        将来実装用のスタブ. 現在は no-op.
+        Prompt_MemoryExtract.md を使用し、evict されたエントリから
+        長期的に保持すべき信念・テーマを抽出する。
+        LLM 呼び出し失敗時はログ出力のみで続行する。
         """
-        # TODO: LLM による高精度な信念・テーマ抽出を実装
-        logger.debug("LLM-based extraction skipped (not yet implemented)")
+        try:
+            prompt_path = self._prompts_dir / "Prompt_MemoryExtract.md"
+            if not prompt_path.exists():
+                logger.warning(
+                    "[Memory] Prompt_MemoryExtract.md not found, skipping LLM extraction",
+                )
+                return
+
+            template = prompt_path.read_text(encoding="utf-8")
+            user_prompt = template.format(
+                evicted_entries="\n".join(evicted_entries),
+                current_beliefs="\n".join(self._memory.long_term.beliefs) or "(なし)",
+                current_themes="\n".join(
+                    self._memory.long_term.recurring_themes,
+                ) or "(なし)",
+            )
+
+            extraction = await llm_client.generate_structured(
+                system_prompt="あなたは記憶管理システムです。",
+                user_prompt=user_prompt,
+                response_model=MemoryExtraction,
+                temperature=0.3,
+            )
+
+            for belief in extraction.new_beliefs:
+                self.add_belief(belief)
+            for theme in extraction.new_themes:
+                self.add_theme(theme)
+
+            logger.info(
+                "[Memory] LLM extracted %d beliefs, %d themes",
+                len(extraction.new_beliefs),
+                len(extraction.new_themes),
+            )
+        except Exception:
+            logger.warning(
+                "[Memory] LLM extraction failed, continuing with rule-based only",
+                exc_info=True,
+            )
 
     def add_belief(self, belief: str) -> None:
         """信念を long_term に追加する (重複チェック付き).

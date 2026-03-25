@@ -57,7 +57,7 @@ class Actor:
         self,
         prev_state: CharacterState,
         event: DailyEvent,
-    ) -> CharacterState:
+    ) -> tuple[CharacterState, str]:
         """Phase 1: イベントに基づきキャラクターの内部状態を更新する。
 
         半数式化アプローチ:
@@ -70,7 +70,7 @@ class Actor:
             event: 当日のイベント定義 (x_t)。
 
         Returns:
-            更新されたキャラクター内部状態 (h_t)。
+            (更新されたキャラクター内部状態 (h_t), delta の変化理由) のタプル。
 
         Raises:
             pydantic.ValidationError: LLM 出力がスキーマに適合しない場合。
@@ -127,7 +127,9 @@ class Actor:
             new_state.stress,
         )
 
-        return new_state
+        delta_reason = self._generate_delta_reason(prev_state, new_state, event)
+
+        return new_state, delta_reason
 
     async def generate_diary(
         self,
@@ -175,6 +177,22 @@ class Actor:
         )
 
         return diary_text
+
+    def _generate_delta_reason(
+        self,
+        prev_state: CharacterState,
+        new_state: CharacterState,
+        event: DailyEvent,
+    ) -> str:
+        """delta の変化理由をヒューリスティックで生成する。"""
+        deltas = {
+            "fatigue": new_state.fatigue - prev_state.fatigue,
+            "motivation": new_state.motivation - prev_state.motivation,
+            "stress": new_state.stress - prev_state.stress,
+        }
+        max_param = max(deltas, key=lambda k: abs(deltas[k]))
+        direction = "上昇" if deltas[max_param] > 0 else "低下"
+        return f"{event.description[:50]}により{max_param}が{direction}(delta={deltas[max_param]:.2f})"
 
     def _load_prompt(self, filename: str) -> str:
         """prompts/ ディレクトリからプロンプトファイルを読み込む。

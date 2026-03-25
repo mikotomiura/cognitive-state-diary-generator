@@ -82,9 +82,11 @@ class TestUpdateState:
         assert isinstance(mock_llm_client, AsyncMock)
         mock_llm_client.generate_structured.return_value = llm_output
 
-        result = await actor.update_state(initial_state, sample_event)
+        result, delta_reason = await actor.update_state(initial_state, sample_event)
 
         assert isinstance(result, CharacterState)
+        assert isinstance(delta_reason, str)
+        assert len(delta_reason) > 0
         # 連続変数は数式で統合されるため、範囲内にあることを確認
         assert -1.0 <= result.stress <= 1.0
         assert -1.0 <= result.motivation <= 1.0
@@ -172,6 +174,52 @@ class TestUpdateState:
         assert "Day 1の記憶" in user_prompt
         assert "Day 2の記憶" in user_prompt
         assert "(記憶なし)" not in user_prompt
+
+
+class TestDeltaReason:
+    """Actor._generate_delta_reason のテスト。"""
+
+    @pytest.mark.asyncio()
+    async def test_update_state_returns_tuple(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+        initial_state: CharacterState,
+        sample_event: DailyEvent,
+    ) -> None:
+        """update_state が (CharacterState, str) のタプルを返す。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = initial_state
+
+        result = await actor.update_state(initial_state, sample_event)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], CharacterState)
+        assert isinstance(result[1], str)
+        assert len(result[1]) > 0
+
+    @pytest.mark.asyncio()
+    async def test_delta_reason_contains_event_info(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+        initial_state: CharacterState,
+        sample_event: DailyEvent,
+    ) -> None:
+        """delta_reason にイベント情報とパラメータ名が含まれる。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        llm_output = initial_state.model_copy(
+            update={"stress": 0.5, "motivation": 0.3},
+        )
+        mock_llm_client.generate_structured.return_value = llm_output
+
+        _, delta_reason = await actor.update_state(initial_state, sample_event)
+
+        # イベント description の一部が含まれる
+        assert "自動化スクリプト" in delta_reason
+        # パラメータ名が含まれる
+        assert any(p in delta_reason for p in ("fatigue", "motivation", "stress"))
 
 
 class TestGenerateDiary:

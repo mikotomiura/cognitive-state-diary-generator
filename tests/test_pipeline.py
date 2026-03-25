@@ -15,6 +15,8 @@ from csdg.config import CSDGConfig
 from csdg.engine.actor import Actor
 from csdg.engine.critic import Critic, judge
 from csdg.engine.pipeline import PipelineRunner, RetryCandidate
+
+from pathlib import Path
 from csdg.schemas import CharacterState, CriticResult, CriticScore, DailyEvent, LayerScore
 
 # ====================================================================
@@ -143,7 +145,7 @@ class TestNormalFlow:
         assert isinstance(mock_critic, AsyncMock)
 
         updated_state = state.model_copy(update={"stress": 0.0})
-        mock_actor.update_state.return_value = updated_state
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
         mock_actor.generate_diary.return_value = "今日の日記です。" * 10
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
@@ -179,7 +181,7 @@ class TestRetry:
         assert isinstance(mock_critic, AsyncMock)
 
         updated_state = state.model_copy(update={"stress": 0.0})
-        mock_actor.update_state.return_value = updated_state
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
         mock_actor.generate_diary.return_value = "今日の日記です。" * 10
 
         reject = _make_reject_score()
@@ -216,7 +218,7 @@ class TestTemperatureDecay:
         assert isinstance(mock_critic, AsyncMock)
 
         updated_state = state.model_copy(update={"stress": 0.0})
-        mock_actor.update_state.return_value = updated_state
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
         mock_actor.generate_diary.return_value = "今日の日記です。" * 10
 
         # 3回 Reject → Best-of-N
@@ -256,7 +258,7 @@ class TestBestOfN:
         assert isinstance(mock_critic, AsyncMock)
 
         updated_state = state.model_copy(update={"stress": 0.0})
-        mock_actor.update_state.return_value = updated_state
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
 
         # 各 attempt で異なる日記テキスト
         mock_actor.generate_diary.side_effect = [
@@ -390,7 +392,7 @@ class TestMemoryBuffer:
             prev: CharacterState,
             event: DailyEvent,
         ) -> CharacterState:
-            return prev.model_copy(update={"stress": 0.0})
+            return (prev.model_copy(update={"stress": 0.0}), "テストreason")
 
         mock_actor.update_state.side_effect = _update_preserving_memory
         mock_actor.generate_diary.return_value = "テスト日記です。" * 10
@@ -469,12 +471,12 @@ class TestDaySkip:
         async def update_state_side_effect(
             prev: CharacterState,
             event: DailyEvent,
-        ) -> CharacterState:
+        ) -> tuple[CharacterState, str]:
             nonlocal call_count
             call_count += 1
             if event.day == 3:
                 raise RuntimeError("予期しないエラー")
-            return updated_state
+            return (updated_state, "テストreason")
 
         mock_actor.update_state.side_effect = update_state_side_effect
         mock_actor.generate_diary.return_value = "日記テキスト" * 10
@@ -514,10 +516,10 @@ class TestPipelineAbort:
         async def update_state_side_effect(
             prev: CharacterState,
             event: DailyEvent,
-        ) -> CharacterState:
+        ) -> tuple[CharacterState, str]:
             if event.day >= 3:
                 raise RuntimeError("連続失敗シミュレーション")
-            return updated_state
+            return (updated_state, "テストreason")
 
         mock_actor.update_state.side_effect = update_state_side_effect
         mock_actor.generate_diary.return_value = "日記テキスト" * 10
@@ -531,3 +533,68 @@ class TestPipelineAbort:
         assert len(log.records) == 2
         assert log.records[0].day == 1
         assert log.records[1].day == 2
+
+
+# ====================================================================
+# prompt_hashes: プロンプトファイルのハッシュ計算
+# ====================================================================
+
+
+class TestPromptHashes:
+    """prompt_hashes テスト。"""
+
+    def test_compute_prompt_hashes_with_files(self, tmp_path: Path) -> None:
+        """プロンプトファイルが存在する場合、ハッシュが計算される。"""
+        (tmp_path / "System_Persona.md").write_text("persona", encoding="utf-8")
+        (tmp_path / "Prompt_Generator.md").write_text("generator", encoding="utf-8")
+
+        hashes = PipelineRunner._compute_prompt_hashes(tmp_path)
+
+        assert len(hashes) == 2
+        assert "System_Persona.md" in hashes
+        assert "Prompt_Generator.md" in hashes
+        for name, h in hashes.items():
+            assert len(h) == 64  # SHA-256 hex length
+            assert all(c in "0123456789abcdef" for c in h)
+
+    def test_compute_prompt_hashes_empty_dir(self, tmp_path: Path) -> None:
+        """空ディレクトリではハッシュが空辞書。"""
+        hashes = PipelineRunner._compute_prompt_hashes(tmp_path)
+        assert hashes == {}
+
+    def test_compute_prompt_hashes_nonexistent_dir(self, tmp_path: Path) -> None:
+        """存在しないディレクトリではハッシュが空辞書。"""
+        hashes = PipelineRunner._compute_prompt_hashes(tmp_path / "nonexistent")
+        assert hashes == {}
+
+    @pytest.mark.asyncio()
+    async def test_pipeline_log_contains_prompt_hashes(
+        self,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+        tmp_path: Path,
+    ) -> None:
+        """PipelineLog.prompt_hashes にハッシュ値が含まれる。"""
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        (tmp_path / "Test.md").write_text("test prompt", encoding="utf-8")
+        cfg = CSDGConfig(
+            llm_api_key="test-key",
+            llm_model="gpt-4o",
+            max_retries=3,
+            initial_temperature=0.7,
+            output_dir="test_output",
+        )
+        runner = PipelineRunner(cfg, mock_actor, mock_critic, prompts_dir=tmp_path)
+
+        updated = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated, "テストreason")
+        mock_actor.generate_diary.return_value = "日記テキスト" * 10
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
+
+        log = await runner.run([_make_event(1)], state)
+
+        assert "Test.md" in log.prompt_hashes
+        assert len(log.prompt_hashes["Test.md"]) == 64
