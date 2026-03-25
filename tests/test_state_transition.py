@@ -253,6 +253,84 @@ class TestComputeNextState:
         assert result1.motivation == pytest.approx(result2.motivation)
         assert result1.stress == pytest.approx(result2.stress)
 
+    def test_max_llm_delta_clips_large_delta(
+        self,
+        base_state: CharacterState,
+        sensitivity: dict[str, float],
+        neutral_event: DailyEvent,
+    ) -> None:
+        """max_llm_delta を超える delta が clip される。"""
+        config_with_clip = StateTransitionConfig(
+            noise_scale=0.0,
+            max_llm_delta=0.3,
+        )
+        large_delta = EmotionalDelta(fatigue=0.8, motivation=-0.8, stress=0.8)
+        capped_delta = EmotionalDelta(fatigue=0.3, motivation=-0.3, stress=0.3)
+
+        result_large = compute_next_state(base_state, neutral_event, large_delta, config_with_clip, sensitivity)
+        result_capped = compute_next_state(base_state, neutral_event, capped_delta, config_with_clip, sensitivity)
+
+        # large_delta は clip されるので capped_delta と同一結果
+        assert result_large.fatigue == pytest.approx(result_capped.fatigue)
+        assert result_large.motivation == pytest.approx(result_capped.motivation)
+        assert result_large.stress == pytest.approx(result_capped.stress)
+
+    def test_max_llm_delta_within_range_not_clipped(
+        self,
+        base_state: CharacterState,
+        sensitivity: dict[str, float],
+        neutral_event: DailyEvent,
+    ) -> None:
+        """max_llm_delta 以内の delta は clip されない。"""
+        config_with_clip = StateTransitionConfig(
+            noise_scale=0.0,
+            max_llm_delta=0.5,
+        )
+        small_delta = EmotionalDelta(fatigue=0.2, motivation=-0.1, stress=0.3)
+
+        # max_llm_delta=0.5 なので 0.2, -0.1, 0.3 はすべて範囲内
+        # clip なしの config でも同じ結果になるはず
+        config_no_clip = StateTransitionConfig(
+            noise_scale=0.0,
+            max_llm_delta=10.0,  # 実質無制限
+        )
+        result_clipped = compute_next_state(base_state, neutral_event, small_delta, config_with_clip, sensitivity)
+        result_unclipped = compute_next_state(base_state, neutral_event, small_delta, config_no_clip, sensitivity)
+
+        assert result_clipped.fatigue == pytest.approx(result_unclipped.fatigue)
+        assert result_clipped.motivation == pytest.approx(result_unclipped.motivation)
+        assert result_clipped.stress == pytest.approx(result_unclipped.stress)
+
+    def test_clip_then_llm_weight_applied(
+        self,
+        base_state: CharacterState,
+        sensitivity: dict[str, float],
+        neutral_event: DailyEvent,
+    ) -> None:
+        """clip 後に llm_weight が正しく乗算される。"""
+        config_clip = StateTransitionConfig(
+            decay_rate=0.0,
+            event_weight=0.0,
+            llm_weight=0.5,
+            noise_scale=0.0,
+            max_llm_delta=0.2,
+        )
+        # delta=1.0 → clip to 0.2 → * 0.5 = 0.1
+        delta = EmotionalDelta(fatigue=1.0, motivation=0.0, stress=0.0)
+        zero_event = DailyEvent(
+            day=1,
+            event_type="neutral",
+            domain="内省",
+            description="特に何も起きなかった平穏な一日だった",
+            emotional_impact=0.0,
+        )
+
+        result = compute_next_state(base_state, zero_event, delta, config_clip, sensitivity)
+
+        # base = prev * (1 - 0) + 0 * 0 = prev = 0.1 (fatigue)
+        # result = 0.1 + 0.2 * 0.5 = 0.2
+        assert result.fatigue == pytest.approx(0.2)
+
     def test_discrete_variables_preserved(
         self,
         base_state: CharacterState,

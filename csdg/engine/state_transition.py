@@ -85,9 +85,12 @@ def compute_next_state(
         # 決定論的骨格: decay + event_impact
         base = prev_val * (1.0 - config.decay_rate) + impact_val * config.event_weight
 
+        # LLM delta を max_llm_delta でクリップ (安定性保証)
+        clipped_delta = _clamp(delta_val, -config.max_llm_delta, config.max_llm_delta)
+
         # LLM 補正 + ノイズ
         noise = rng.gauss(0.0, config.noise_scale) if config.noise_scale > 0 else 0.0
-        result = base + delta_val * config.llm_weight + noise
+        result = base + clipped_delta * config.llm_weight + noise
 
         updates[param] = _clamp(result, config.clamp_min, config.clamp_max)
 

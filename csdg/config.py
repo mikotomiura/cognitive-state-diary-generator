@@ -6,6 +6,8 @@ architecture.md §5.2 および functional-design.md §5.4 の仕様に準拠す
 
 from __future__ import annotations
 
+import math
+
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
@@ -30,6 +32,7 @@ class StateTransitionConfig(BaseModel):
     noise_scale: float = 0.05
     clamp_min: float = -1.0
     clamp_max: float = 1.0
+    max_llm_delta: float = 0.3
 
 
 class CSDGConfig(BaseSettings):
@@ -67,6 +70,11 @@ class CSDGConfig(BaseSettings):
     state_transition_event_weight: float = 0.6
     state_transition_llm_weight: float = 0.3
     state_transition_noise_scale: float = 0.05
+    state_transition_max_llm_delta: float = 0.3
+
+    # Temperature 設定
+    temperature_final: float = 0.3
+    temperature_decay_constant: float | None = None
 
     # 出力
     output_dir: str = "output"
@@ -97,18 +105,32 @@ class CSDGConfig(BaseSettings):
             event_weight=self.state_transition_event_weight,
             llm_weight=self.state_transition_llm_weight,
             noise_scale=self.state_transition_noise_scale,
+            max_llm_delta=self.state_transition_max_llm_delta,
         )
 
     @property
     def temperature_schedule(self) -> list[float]:
-        """リトライ時の Temperature スケジュールを生成する。
+        """リトライ時の Temperature スケジュールを指数減衰で生成する。
 
-        初回の Temperature から decay_step ずつ減衰させた
-        max_retries 分のリストを返す。
+        指数減衰の利点:
+        - 序盤は探索的 (高temperature)、中盤以降は急速に安定
+        - 線形より終盤のブレが小さく、物語の着地が安定する
+
+        Formula::
+
+            temp = final + (initial - final) * exp(-decay_constant * i)
+
+        decay_constant のデフォルトは max_retries / 3
+        (リトライ数の1/3で初期振幅の約63%が減衰)。
 
         Returns:
-            Temperature のリスト。例: [0.7, 0.5, 0.3]
+            Temperature のリスト。例: [0.7, 0.447, 0.352]
         """
+        decay = self.temperature_decay_constant if self.temperature_decay_constant is not None else self.max_retries / 3
         return [
-            round(self.initial_temperature - (self.temperature_decay_step * i), 10) for i in range(self.max_retries)
+            round(
+                self.temperature_final + (self.initial_temperature - self.temperature_final) * math.exp(-decay * i),
+                10,
+            )
+            for i in range(self.max_retries)
         ]
