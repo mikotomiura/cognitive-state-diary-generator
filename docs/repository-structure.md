@@ -143,9 +143,9 @@ cognitive-State-Diary-generator/
 
 ```env
 # LLM API設定
-CSDG_LLM_API_KEY=your-api-key-here
-CSDG_LLM_MODEL=gpt-4o
-CSDG_LLM_BASE_URL=https://api.openai.com/v1
+CSDG_LLM_API_KEY=your-anthropic-api-key-here
+CSDG_LLM_MODEL=claude-sonnet-4-20250514
+CSDG_LLM_BASE_URL=https://api.anthropic.com
 
 # パイプライン設定
 CSDG_MAX_RETRIES=3
@@ -249,7 +249,7 @@ development-guidelines.md    ← 「どう運用するか」
 | `__init__.py` | パッケージ初期化。`__version__` の定義 | なし | — |
 | `main.py` | CLI引数の解析、パイプライン実行、ファイル出力、可視化呼び出し | `config`, `scenario`, `engine/pipeline`, `visualization` | `test_pipeline.py`(統合) |
 | `config.py` | 環境変数・`.env` からの設定読み込み。`CSDGConfig` クラス | `pydantic-settings` | `test_config.py` |
-| `schemas.py` | `DailyEvent`, `CharacterState`, `EmotionalDelta`, `LLMDeltaResponse`, `CriticScore`, `CriticResult`, `GenerationRecord`, `PipelineLog` | `pydantic` | `test_schemas.py` |
+| `schemas.py` | `DailyEvent`, `CharacterState`, `EmotionalDelta`, `LLMDeltaResponse`, `CriticScore`, `CriticResult`, `GenerationRecord`, `PipelineLog`, `MemoryExtraction` | `pydantic` | `test_schemas.py` |
 | `scenario.py` | 7日分の `DailyEvent` リスト定義、初期状態 `h_0` 定義、バリデーション | `schemas` | `test_scenario.py` |
 | `visualization.py` | `state_trajectory.png` の生成。`PipelineLog` → matplotlib グラフ | `matplotlib`, `schemas` | `test_visualization.py` |
 
@@ -316,6 +316,7 @@ main.py
 | `Prompt_StateUpdate.md` | 感情推移の計算ルール | Phase 1 | `{previous_state}`, `{event}`, `{memory_buffer}` |
 | `Prompt_Generator.md` | ブログ記事の構成・感情の言語化ルール | Phase 2 | `{current_state}`, `{event}`, `{memory_buffer}`, `{revision_instruction}` |
 | `Prompt_Critic.md` | 評価基準・採点基準（1-5スコアの定義） | Phase 3 | `{diary_text}`, `{current_state}`, `{event}`, `{expected_delta}`, `{deviation}` |
+| `Prompt_MemoryExtract.md` | 長期記憶の信念・テーマ抽出 | メモリ更新時 | `{evicted_entries}`, `{current_beliefs}`, `{current_themes}` |
 
 ### 5.3 プロンプト変更時の確認事項
 

@@ -40,3 +40,19 @@
 - 実パイプライン: 7/7 Day 完了, リトライ1回, フォールバック0回
 - emotional_plausibility: ユニーク値2 (4, 5) — v3改善が機能
 - Day 6 で Veto (persona_deviation) 発動 → リトライで修正確認
+
+## 最終検証・チューニングタスク
+- [x] Prompt_MemoryExtract.md の存在確認・作成 (既存確認済み、プレースホルダ一致)
+- [x] repository-structure.md §2.2 / §5.2 / §4.2 の修正
+- [x] Prompt_Critic.md チューニング (deviation 定量基準 + 採点注意事項)
+- [x] チューニング後のパイプライン再実行
+- [x] 前回結果との比較分析
+- [x] (条件付き) 追加チューニング — 不要と判断 (全deviation<0.1のため構造的限界)
+
+## 検証結果 (チューニング後)
+- 289テスト全パス、ruff check クリーン
+- 実パイプライン: 7/7 Day 完了, リトライ1回, フォールバック0回
+- emotional_plausibility: [4,4,4,4,4,4,5] 平均 4.43→4.14 (厳格化成功)
+- Day 4 (crisis, impact=-0.9): emotional 5→4 (適切に厳格化)
+- Day 7 (deviation=0.029): emotional 5 (定量基準に適合)
+- 全Dayのmax_deviation < 0.1 — Actorの状態遷移精度が高い
