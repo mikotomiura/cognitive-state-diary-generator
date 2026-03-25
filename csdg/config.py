@@ -12,6 +12,15 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 
+class VetoCaps(BaseModel):
+    """Veto 権発動時のスコア上限キャップ設定。"""
+
+    persona: float = 2.0
+    temporal: float = 2.0
+    emotional: float = 2.0
+    all_axes: float = 2.0
+
+
 class CriticWeights(BaseModel):
     """Critic 3層分解の重み設定。"""
 
@@ -72,6 +81,12 @@ class CSDGConfig(BaseSettings):
     state_transition_noise_scale: float = 0.05
     state_transition_max_llm_delta: float = 0.3
 
+    # Veto キャップ設定
+    veto_cap_persona: float = 2.0
+    veto_cap_temporal: float = 2.0
+    veto_cap_emotional: float = 2.0
+    veto_cap_all_axes: float = 2.0
+
     # Temperature 設定
     temperature_final: float = 0.3
     temperature_decay_constant: float | None = None
@@ -95,6 +110,16 @@ class CSDGConfig(BaseSettings):
             rule_based=self.critic_weight_rule_based,
             statistical=self.critic_weight_statistical,
             llm_judge=self.critic_weight_llm_judge,
+        )
+
+    @property
+    def veto_caps(self) -> VetoCaps:
+        """Veto キャップ設定を VetoCaps として返す。"""
+        return VetoCaps(
+            persona=self.veto_cap_persona,
+            temporal=self.veto_cap_temporal,
+            emotional=self.veto_cap_emotional,
+            all_axes=self.veto_cap_all_axes,
         )
 
     @property

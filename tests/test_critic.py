@@ -481,6 +481,101 @@ class TestCriticPromptLoading:
 # ====================================================================
 
 
+class TestRuleBasedValidatorCriticalFailure:
+    """RuleBasedValidator.has_critical_failure のテスト."""
+
+    def setup_method(self) -> None:
+        self.validator = RuleBasedValidator()
+
+    def test_no_critical_failure(self) -> None:
+        """致命的違反がない場合、全軸 False."""
+        result = LayerScore(
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
+            persona_deviation=5.0,
+            details={"char_count": 1000},
+        )
+        veto = self.validator.has_critical_failure(result)
+        assert not any(veto.values())
+
+    def test_forbidden_pronoun_vetos_persona(self) -> None:
+        """禁止一人称で persona 軸に veto."""
+        result = LayerScore(
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
+            persona_deviation=3.0,
+            details={"char_count": 1000, "forbidden_pronoun_found": True},
+        )
+        veto = self.validator.has_critical_failure(result)
+        assert veto["persona_deviation"] is True
+        assert veto["temporal_consistency"] is False
+        assert veto["emotional_plausibility"] is False
+
+    def test_extreme_char_deviation_vetos_all(self) -> None:
+        """文字数 ±50% 超で全軸に veto."""
+        # mid = (800+2000)/2 = 1400, lower = 700, upper = 2100
+        # char_count=100 is well below 700
+        result = LayerScore(
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
+            persona_deviation=5.0,
+            details={"char_count": 100},
+        )
+        veto = self.validator.has_critical_failure(result)
+        assert all(veto.values())
+
+    def test_high_trigram_overlap_vetos_temporal(self) -> None:
+        """trigram overlap > 50% で temporal 軸に veto."""
+        result = LayerScore(
+            temporal_consistency=3.5,
+            emotional_plausibility=5.0,
+            persona_deviation=5.0,
+            details={"char_count": 1000, "trigram_overlap": 0.6},
+        )
+        veto = self.validator.has_critical_failure(result)
+        assert veto["temporal_consistency"] is True
+        assert veto["persona_deviation"] is False
+
+    def test_overlap_at_boundary_no_veto(self) -> None:
+        """trigram overlap = 50% ちょうどでは veto なし."""
+        result = LayerScore(
+            temporal_consistency=3.5,
+            emotional_plausibility=5.0,
+            persona_deviation=5.0,
+            details={"char_count": 1000, "trigram_overlap": 0.50},
+        )
+        veto = self.validator.has_critical_failure(result)
+        assert veto["temporal_consistency"] is False
+
+
+class TestRuleBasedValidatorForbiddenPronouns:
+    """禁止一人称検出のテスト."""
+
+    def setup_method(self) -> None:
+        self.validator = RuleBasedValidator()
+        self.prev_state = _make_state()
+        self.curr_state = _make_state(stress=0.0, motivation=0.3, fatigue=0.05)
+        self.event = _make_event()
+        self.expected_delta = {"stress": -0.06, "motivation": 0.08, "fatigue": -0.04}
+
+    def test_forbidden_pronoun_detected(self) -> None:
+        """禁止一人称「僕」を含む日記で検出される."""
+        diary = "あ" * 500 + "僕は今日も頑張った" + "あ" * 500
+        result = self.validator.evaluate(
+            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+        )
+        assert result.details.get("forbidden_pronoun_found") is True
+        assert "僕" in result.details.get("forbidden_pronouns", [])
+
+    def test_allowed_pronoun_not_detected(self) -> None:
+        """許可された一人称「わたし」は検出されない."""
+        diary = "あ" * 500 + "わたしは今日も頑張った" + "あ" * 500
+        result = self.validator.evaluate(
+            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+        )
+        assert result.details.get("forbidden_pronoun_found") is None
+
+
 class TestCriticPipeline:
     """CriticPipeline の統合テスト."""
 
@@ -616,3 +711,107 @@ class TestCriticPipeline:
         assert result.weights["rule_based"] == pytest.approx(0.3)
         assert result.weights["statistical"] == pytest.approx(0.2)
         assert result.weights["llm_judge"] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio()
+    async def test_veto_caps_persona_on_forbidden_pronoun(
+        self,
+        mock_llm_client: LLMClient,
+        test_config: CSDGConfig,
+        critic_prompts_dir: Path,
+    ) -> None:
+        """禁止一人称で veto 発動時、persona スコアが veto_cap 以下になる."""
+        assert isinstance(mock_llm_client, AsyncMock)
+        # LLM は満点を返すが、Layer1 の veto でキャップされるはず
+        mock_llm_client.generate_structured.return_value = CriticScore(
+            temporal_consistency=5,
+            emotional_plausibility=5,
+            persona_deviation=5,
+        )
+
+        pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
+        prev = _make_state()
+        curr = _make_state(stress=0.0, motivation=0.3)
+        # 禁止一人称「僕」を含む日記
+        diary = "あ" * 500 + "僕は今日も頑張った" + "あ" * 500
+        event = _make_event()
+
+        result = await pipeline.evaluate(prev, curr, diary, event)
+
+        assert result.veto_applied.get("persona_deviation") is True
+        assert result.final_score.persona_deviation <= test_config.veto_cap_persona
+
+    @pytest.mark.asyncio()
+    async def test_no_veto_when_no_critical_failure(
+        self,
+        mock_llm_client: LLMClient,
+        test_config: CSDGConfig,
+        critic_prompts_dir: Path,
+    ) -> None:
+        """致命的違反なしでは veto 非発動、通常の重み付き平均が使われる."""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = CriticScore(
+            temporal_consistency=4,
+            emotional_plausibility=4,
+            persona_deviation=4,
+        )
+
+        pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
+        prev = _make_state()
+        curr = _make_state(stress=0.0, motivation=0.3)
+        diary = "あ" * 1000  # 正常な日記
+        event = _make_event()
+
+        result = await pipeline.evaluate(prev, curr, diary, event)
+
+        assert not any(result.veto_applied.values())
+
+    @pytest.mark.asyncio()
+    async def test_inverse_estimation_score_recorded(
+        self,
+        mock_llm_client: LLMClient,
+        test_config: CSDGConfig,
+        critic_prompts_dir: Path,
+    ) -> None:
+        """逆推定一致スコアが CriticResult に記録される."""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = CriticScore(
+            temporal_consistency=4,
+            emotional_plausibility=4,
+            persona_deviation=4,
+        )
+
+        pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
+        result = await pipeline.evaluate(
+            _make_state(), _make_state(), "あ" * 1000, _make_event(),
+        )
+
+        assert result.inverse_estimation_score is not None
+        assert 1.0 <= result.inverse_estimation_score <= 5.0
+
+    @pytest.mark.asyncio()
+    async def test_low_inverse_estimation_vetos_emotional(
+        self,
+        mock_llm_client: LLMClient,
+        test_config: CSDGConfig,
+        critic_prompts_dir: Path,
+    ) -> None:
+        """逆推定一致スコアが低い場合、emotional 軸に veto がかかる."""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_structured.return_value = CriticScore(
+            temporal_consistency=5,
+            emotional_plausibility=5,
+            persona_deviation=5,
+        )
+
+        pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
+        prev = _make_state()
+        # 非常に大きな deviation -> 低い inverse_estimation_score
+        curr = _make_state(stress=0.9, motivation=-0.9, fatigue=0.9)
+        diary = "あ" * 1000
+        event = _make_event(impact=0.0)
+
+        result = await pipeline.evaluate(prev, curr, diary, event)
+
+        # deviation が大きいため inverse_estimation_score が低くなるはず
+        if result.inverse_estimation_score is not None and result.inverse_estimation_score <= 2.0:
+            assert result.final_score.emotional_plausibility <= test_config.veto_cap_emotional

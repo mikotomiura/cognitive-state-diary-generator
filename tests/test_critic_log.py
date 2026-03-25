@@ -119,6 +119,44 @@ class TestCriticLogEntry:
         )
         assert entry.timestamp is not None
 
+    def test_new_fields_defaults(self) -> None:
+        """v3 追加フィールドのデフォルト値."""
+        entry = _make_entry(day=1)
+        assert entry.llm_delta_reason == ""
+        assert entry.inverse_estimation_score is None
+
+    def test_new_fields_set(self) -> None:
+        """v3 追加フィールドに値を設定できる."""
+        entry = CriticLogEntry(
+            day=1,
+            scores=_make_critic_result(),
+            actor_input_summary="summary",
+            generated_text_hash="abc",
+            llm_delta_reason="上司に叱責されたためストレス上昇",
+            inverse_estimation_score=3.5,
+        )
+        assert entry.llm_delta_reason == "上司に叱責されたためストレス上昇"
+        assert entry.inverse_estimation_score == 3.5
+
+    def test_new_fields_roundtrip(self, tmp_path: Path) -> None:
+        """v3 追加フィールドの保存/読み込み往復テスト."""
+        log = CriticLog()
+        log.add(CriticLogEntry(
+            day=1,
+            scores=_make_critic_result(),
+            actor_input_summary="summary",
+            generated_text_hash="abc",
+            llm_delta_reason="テスト理由",
+            inverse_estimation_score=4.0,
+        ))
+
+        file_path = tmp_path / "test_new_fields.jsonl"
+        log.save(file_path)
+
+        loaded = CriticLog.load(file_path)
+        assert loaded.entries[0].llm_delta_reason == "テスト理由"
+        assert loaded.entries[0].inverse_estimation_score == 4.0
+
 
 # ====================================================================
 # CriticLog の保存/読み込みテスト

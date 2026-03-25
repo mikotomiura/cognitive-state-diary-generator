@@ -103,6 +103,25 @@ class EmotionalDelta(BaseModel):
     stress: float = Field(default=0.0, description="ストレス値の変化量")
 
 
+class LLMDeltaResponse(BaseModel):
+    """LLM が返す delta 補正値と理由。
+
+    LLM に delta を返させる際、変化の理由を併記させることで
+    デバッグ時に「なぜこの状態遷移が起きたか」を追跡可能にする。
+    """
+
+    delta: EmotionalDelta = Field(description="各軸の補正値")
+    reason: str = Field(description="deltaの変化理由 (例: 上司に叱責されたためストレス上昇)")
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason_not_empty(cls, v: str) -> str:
+        """reason が空文字列の場合はエラー。"""
+        if not v.strip():
+            raise ValueError("reason は空文字列不可")
+        return v
+
+
 class CriticScore(BaseModel):
     """評価器スコア。
 
@@ -207,6 +226,14 @@ class CriticResult(BaseModel):
     weights: dict[str, float] = Field(
         default_factory=lambda: {"rule_based": 0.3, "statistical": 0.2, "llm_judge": 0.5},
         description="各層の重み",
+    )
+    inverse_estimation_score: float | None = Field(
+        default=None,
+        description="逆推定一致スコア (1-5): テキストから推定される感情状態と入力値の一致度",
+    )
+    veto_applied: dict[str, bool] = Field(
+        default_factory=dict,
+        description="各軸で veto が発動されたかのフラグ",
     )
 
 

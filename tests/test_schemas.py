@@ -15,10 +15,11 @@ from csdg.schemas import (
     CharacterState,
     CriticScore,
     DailyEvent,
+    EmotionalDelta,
     GenerationRecord,
+    LLMDeltaResponse,
     PipelineLog,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -372,4 +373,47 @@ class TestRoundtripSerialization:
             total_fallbacks=0,
         )
         restored = PipelineLog.model_validate_json(original.model_dump_json())
+        assert original == restored
+
+
+# ---------------------------------------------------------------------------
+# LLMDeltaResponse のテスト
+# ---------------------------------------------------------------------------
+
+
+class TestLLMDeltaResponse:
+    """LLMDeltaResponse のバリデーションテスト."""
+
+    def test_valid_response(self) -> None:
+        """正常な LLMDeltaResponse を作成できる."""
+        resp = LLMDeltaResponse(
+            delta=EmotionalDelta(fatigue=0.1, motivation=-0.2, stress=0.3),
+            reason="上司に叱責されたためストレス上昇",
+        )
+        assert resp.reason == "上司に叱責されたためストレス上昇"
+        assert resp.delta.stress == pytest.approx(0.3)
+
+    def test_empty_reason_raises(self) -> None:
+        """reason が空文字列の場合に ValidationError."""
+        with pytest.raises(ValidationError, match="reason は空文字列不可"):
+            LLMDeltaResponse(
+                delta=EmotionalDelta(),
+                reason="",
+            )
+
+    def test_whitespace_only_reason_raises(self) -> None:
+        """reason がスペースのみの場合に ValidationError."""
+        with pytest.raises(ValidationError, match="reason は空文字列不可"):
+            LLMDeltaResponse(
+                delta=EmotionalDelta(),
+                reason="   ",
+            )
+
+    def test_roundtrip_serialization(self) -> None:
+        """JSON シリアライズ/デシリアライズの往復テスト."""
+        original = LLMDeltaResponse(
+            delta=EmotionalDelta(fatigue=0.1, motivation=-0.2, stress=0.3),
+            reason="テスト理由",
+        )
+        restored = LLMDeltaResponse.model_validate_json(original.model_dump_json())
         assert original == restored

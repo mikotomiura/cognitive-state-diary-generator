@@ -45,6 +45,11 @@ _EMOJI_PATTERN = re.compile(
     r"\U00002600-\U000026FF]",
 )
 
+# Veto 権 (致命的違反) の定数
+_CRITICAL_CHAR_DEVIATION = 0.5  # 文字数レンジの±50%逸脱
+_CRITICAL_TRIGRAM_OVERLAP = 0.50  # trigram overlap > 50%
+_FORBIDDEN_PRONOUNS = ("俺", "僕", "私", "あたし", "おれ", "ぼく", "あたくし", "わし", "うち")
+
 # StatisticalChecker の定数
 _MIN_AVG_SENTENCE_LENGTH = 10
 _MAX_AVG_SENTENCE_LENGTH = 80
@@ -184,6 +189,16 @@ class RuleBasedValidator:
             penalties["persona_deviation"] += 2.0
             details["emoji_count"] = len(emoji_matches)
 
+        # 禁止一人称検出 -> persona_deviation (veto 対象)
+        found_pronouns: list[str] = []
+        for pronoun in _FORBIDDEN_PRONOUNS:
+            if pronoun in diary_text:
+                found_pronouns.append(pronoun)
+        if found_pronouns:
+            penalties["persona_deviation"] += 2.0
+            details["forbidden_pronoun_found"] = True
+            details["forbidden_pronouns"] = found_pronouns
+
         # 前日との重複率チェック -> temporal_consistency
         if prev_diary:
             overlap = _compute_trigram_overlap(diary_text, prev_diary)
@@ -212,6 +227,50 @@ class RuleBasedValidator:
             persona_deviation=max(1.0, 5.0 - penalties["persona_deviation"]),
             details=details,
         )
+
+    def has_critical_failure(self, result: LayerScore) -> dict[str, bool]:
+        """致命的違反を検出し、veto 対象軸を返す。
+
+        致命的違反の定義:
+        - 禁止一人称の使用 → persona 軸に veto
+        - 文字数レンジ逸脱 (±50%超) → 全軸に veto
+        - trigram overlap > 50% → temporal 軸に veto
+
+        Args:
+            result: evaluate() の戻り値 (LayerScore)。
+
+        Returns:
+            各軸の veto フラグ辞書。True = veto 発動。
+        """
+        veto: dict[str, bool] = {
+            "temporal_consistency": False,
+            "emotional_plausibility": False,
+            "persona_deviation": False,
+        }
+
+        details = result.details
+
+        # 禁止一人称 → persona 軸に veto
+        if details.get("forbidden_pronoun_found"):
+            veto["persona_deviation"] = True
+
+        # 文字数レンジ逸脱 (±50%超) → 全軸に veto
+        char_count = details.get("char_count", 0)
+        if isinstance(char_count, int):
+            mid = (_MIN_DIARY_LENGTH + _MAX_DIARY_LENGTH) / 2
+            lower = mid * (1 - _CRITICAL_CHAR_DEVIATION)
+            upper = mid * (1 + _CRITICAL_CHAR_DEVIATION)
+            if char_count < lower or char_count > upper:
+                veto["temporal_consistency"] = True
+                veto["emotional_plausibility"] = True
+                veto["persona_deviation"] = True
+
+        # trigram overlap > 50% → temporal 軸に veto
+        overlap = details.get("trigram_overlap")
+        if isinstance(overlap, (int, float)) and overlap > _CRITICAL_TRIGRAM_OVERLAP:
+            veto["temporal_consistency"] = True
+
+        return veto
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +388,7 @@ class LLMJudge:
         deviation: dict[str, float],
         layer1_result: LayerScore,
         layer2_result: LayerScore,
-    ) -> LayerScore:
+    ) -> tuple[LayerScore, float]:
         """LLM による定性評価を実行する。
 
         Args:
@@ -343,7 +402,8 @@ class LLMJudge:
             layer2_result: StatisticalChecker の結果。
 
         Returns:
-            LayerScore (各軸 1.0-5.0, LLM の整数スコアを float に変換)。
+            (LayerScore, inverse_estimation_score) のタプル。
+            inverse_estimation_score は 1.0-5.0 の逆推定一致スコア。
         """
         system_prompt = self._load_prompt("System_Persona.md")
         user_prompt = self._build_prompt(
@@ -363,15 +423,43 @@ class LLMJudge:
             temperature=self._config.initial_temperature,
         )
 
-        return LayerScore(
-            temporal_consistency=float(critic_score.temporal_consistency),
-            emotional_plausibility=float(critic_score.emotional_plausibility),
-            persona_deviation=float(critic_score.persona_deviation),
-            details={
-                "reject_reason": critic_score.reject_reason,
-                "revision_instruction": critic_score.revision_instruction,
-            },
+        # 逆推定一致スコアの算出 (LLM の emotional_plausibility を基準にヒューリスティック算出)
+        # deviation が大きいほど逆推定一致が低くなる
+        inverse_score = self._compute_inverse_estimation(
+            diary_text, curr_state, deviation,
         )
+
+        return (
+            LayerScore(
+                temporal_consistency=float(critic_score.temporal_consistency),
+                emotional_plausibility=float(critic_score.emotional_plausibility),
+                persona_deviation=float(critic_score.persona_deviation),
+                details={
+                    "reject_reason": critic_score.reject_reason,
+                    "revision_instruction": critic_score.revision_instruction,
+                    "inverse_estimation_score": inverse_score,
+                },
+            ),
+            inverse_score,
+        )
+
+    def _compute_inverse_estimation(
+        self,
+        diary_text: str,
+        curr_state: CharacterState,
+        deviation: dict[str, float],
+    ) -> float:
+        """状態-文章の因果整合性を数値的に推定する。
+
+        deviation の大きさに基づいて 1.0-5.0 のスコアを算出する。
+        deviation が小さいほど状態と文章が一致していると判断する。
+        """
+        if not deviation:
+            return 5.0
+        max_dev = max(abs(v) for v in deviation.values())
+        # max_dev: 0.0 -> 5.0, 0.5 -> 3.0, 1.0+ -> 1.0
+        score = max(1.0, min(5.0, 5.0 - max_dev * 4.0))
+        return round(score, 1)
 
     def _load_prompt(self, filename: str) -> str:
         """prompts/ ディレクトリからプロンプトファイルを読み込む。"""
@@ -440,6 +528,7 @@ class CriticPipeline:
     ) -> None:
         self._config = config
         self._weights = config.critic_weights
+        self._veto_caps = config.veto_caps
         self._rule_based = RuleBasedValidator()
         self._statistical = StatisticalChecker()
         self._llm_judge = LLMJudge(client, config, prompts_dir)
@@ -487,8 +576,8 @@ class CriticPipeline:
             deviation,
         )
 
-        # Layer 3: LLMJudge
-        layer3 = await self._llm_judge.evaluate(
+        # Layer 3: LLMJudge (逆推定一致スコアも返す)
+        layer3, inverse_score = await self._llm_judge.evaluate(
             diary_text,
             prev_state,
             curr_state,
@@ -499,11 +588,16 @@ class CriticPipeline:
             layer2,
         )
 
-        # 重み付き加重平均で最終スコアを算出
-        final_score = self._compute_final_score(layer1, layer2, layer3)
+        # Veto 判定
+        veto_flags = self._rule_based.has_critical_failure(layer1)
+
+        # 重み付き加重平均で最終スコアを算出 (veto 権 + 逆推定一致チェック付き)
+        final_score = self._compute_final_score(
+            layer1, layer2, layer3, veto_flags, inverse_score,
+        )
 
         logger.info(
-            "[Day %d] CriticPipeline: L1=%.1f/%.1f/%.1f, L2=%.1f/%.1f/%.1f, L3=%.1f/%.1f/%.1f -> Final=%d/%d/%d",
+            "[Day %d] CriticPipeline: L1=%.1f/%.1f/%.1f L2=%.1f/%.1f/%.1f L3=%.1f/%.1f/%.1f -> %d/%d/%d (inv=%.1f)",
             event.day,
             layer1.temporal_consistency,
             layer1.emotional_plausibility,
@@ -517,6 +611,7 @@ class CriticPipeline:
             final_score.temporal_consistency,
             final_score.emotional_plausibility,
             final_score.persona_deviation,
+            inverse_score,
         )
 
         return CriticResult(
@@ -529,6 +624,8 @@ class CriticPipeline:
                 "statistical": self._weights.statistical,
                 "llm_judge": self._weights.llm_judge,
             },
+            inverse_estimation_score=inverse_score,
+            veto_applied=veto_flags,
         )
 
     def _compute_final_score(
@@ -536,10 +633,28 @@ class CriticPipeline:
         layer1: LayerScore,
         layer2: LayerScore,
         layer3: LayerScore,
+        veto_flags: dict[str, bool] | None = None,
+        inverse_estimation_score: float | None = None,
     ) -> CriticScore:
-        """3層のスコアを重み付き加重平均で統合する。"""
+        """3層のスコアを重み付き加重平均で統合する (veto 権付き)。
+
+        veto 発動時は該当軸のスコアに上限キャップを適用する。
+        逆推定一致スコアが 2 以下の場合、emotional 軸に veto を適用する。
+        """
         w = self._weights
+        caps = self._veto_caps
+        effective_veto = dict(veto_flags) if veto_flags else {f: False for f in _SCORE_FIELDS}
+
+        # 逆推定一致スコアが低い場合、emotional 軸に veto
+        if inverse_estimation_score is not None and inverse_estimation_score <= 2.0:
+            effective_veto["emotional_plausibility"] = True
+
         scores: dict[str, int] = {}
+        veto_cap_map: dict[str, float] = {
+            "temporal_consistency": caps.temporal,
+            "emotional_plausibility": caps.emotional,
+            "persona_deviation": caps.persona,
+        }
 
         for field in _SCORE_FIELDS:
             weighted = (
@@ -547,6 +662,12 @@ class CriticPipeline:
                 + getattr(layer2, field) * w.statistical
                 + getattr(layer3, field) * w.llm_judge
             )
+
+            if effective_veto.get(field):
+                cap = veto_cap_map[field]
+                weighted = min(weighted, cap)
+                logger.info("[Veto] %s capped to %.1f", field, cap)
+
             scores[field] = max(1, min(5, round(weighted)))
 
         # reject_reason / revision_instruction は LLMJudge から取得

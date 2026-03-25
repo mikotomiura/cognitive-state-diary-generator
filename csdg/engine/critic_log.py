@@ -32,6 +32,8 @@ class CriticLogEntry(BaseModel):
     actor_input_summary: str = Field(description="Actor 入力の要約 (状態 + イベント)")
     generated_text_hash: str = Field(description="生成テキストの SHA-256 ハッシュ (重複検出用)")
     failure_patterns: list[str] = Field(default_factory=list, description="Layer1/2 で検出された具体的な問題")
+    llm_delta_reason: str = Field(default="", description="LLM delta の変化理由 (タスク1c)")
+    inverse_estimation_score: float | None = Field(default=None, description="逆推定一致スコア (1-5)")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 

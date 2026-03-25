@@ -320,6 +320,7 @@ class PipelineRunner:
                 ),
                 generated_text_hash=compute_text_hash(final_diary),
                 failure_patterns=extract_failure_patterns(last_critic_result),
+                inverse_estimation_score=last_critic_result.inverse_estimation_score,
             )
             self._critic_log.add(log_entry)
 
