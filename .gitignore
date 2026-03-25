@@ -1,0 +1,37 @@
+# Environment
+.env
+
+# Output
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Type checker
+.mypy_cache/
+
+# Linter / Formatter
+.ruff_cache/
+
+# Test
+.pytest_cache/
+.coverage
+
+# Virtual environments
+.venv/
+.uv/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# 個人ファイル
+advice.md
+docs/
+.claude/
+CLAUDE.md
+.steering/
