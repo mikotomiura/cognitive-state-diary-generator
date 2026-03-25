@@ -611,13 +611,33 @@ class Critic:
         Returns:
             CriticScore インスタンス。
         """
-        result = await self._pipeline.evaluate(
+        result = await self.evaluate_full(prev_state, curr_state, diary_text, event)
+        return result.final_score
+
+    async def evaluate_full(
+        self,
+        prev_state: CharacterState,
+        curr_state: CharacterState,
+        diary_text: str,
+        event: DailyEvent,
+    ) -> CriticResult:
+        """日記テキストと状態を評価し、CriticResult (3層詳細) を返す。
+
+        Args:
+            prev_state: 前日のキャラクター内部状態 (h_{t-1})。
+            curr_state: 今日のキャラクター内部状態 (h_t)。
+            diary_text: Phase 2 で生成された日記テキスト。
+            event: 当日のイベント定義。
+
+        Returns:
+            CriticResult インスタンス (3層スコア + 統合スコア)。
+        """
+        return await self._pipeline.evaluate(
             prev_state,
             curr_state,
             diary_text,
             event,
         )
-        return result.final_score
 
     def _load_prompt(self, filename: str) -> str:
         """prompts/ ディレクトリからプロンプトファイルを読み込む。"""

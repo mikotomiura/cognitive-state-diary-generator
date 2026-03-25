@@ -16,6 +16,13 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from csdg.engine.critic import compute_deviation, compute_expected_delta, judge
+from csdg.engine.critic_log import (
+    CriticLog,
+    CriticLogEntry,
+    build_feedback_prompt,
+    compute_text_hash,
+    extract_failure_patterns,
+)
 from csdg.engine.memory import MemoryManager
 from csdg.schemas import CharacterState, CriticScore, GenerationRecord, PipelineLog
 
@@ -23,7 +30,7 @@ if TYPE_CHECKING:
     from csdg.config import CSDGConfig
     from csdg.engine.actor import Actor
     from csdg.engine.critic import Critic
-    from csdg.schemas import DailyEvent
+    from csdg.schemas import CriticResult, DailyEvent
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,7 @@ class PipelineRunner:
         actor: Actor,
         critic: Critic,
         memory_manager: MemoryManager | None = None,
+        critic_log: CriticLog | None = None,
     ) -> None:
         """PipelineRunner を初期化する。
 
@@ -74,6 +82,7 @@ class PipelineRunner:
             actor: Actor インスタンス。
             critic: Critic インスタンス。
             memory_manager: メモリマネージャ。None の場合はデフォルトで生成。
+            critic_log: Critic ログ。None の場合は空のログで生成。
         """
         self._config = config
         self._actor = actor
@@ -81,6 +90,7 @@ class PipelineRunner:
         self._memory = memory_manager or MemoryManager(
             window_size=config.memory_window_size,
         )
+        self._critic_log = critic_log or CriticLog()
 
     async def run(
         self,
@@ -214,24 +224,36 @@ class PipelineRunner:
         final_diary = ""
         phase2_total_ms = 0
         phase3_total_ms = 0
+        last_critic_result: CriticResult | None = None
+
+        # 過去の失敗パターンをフィードバックとして取得
+        feedback = build_feedback_prompt(
+            self._critic_log.get_all_low_score_patterns(threshold=3.0, top_k=5),
+        )
 
         for attempt_idx in range(self._config.max_retries):
             temperature = schedule[attempt_idx] if attempt_idx < len(schedule) else schedule[-1]
 
-            # Phase 2: Content Generation
+            # Phase 2: Content Generation (過去の失敗パターンを注入)
+            combined_instruction = revision_instruction or ""
+            if feedback:
+                combined_instruction = f"{combined_instruction}\n\n{feedback}" if combined_instruction else feedback
+
             phase2_start = time.monotonic()
             diary_text = await self._actor.generate_diary(
                 curr_state,
                 event,
-                revision_instruction=revision_instruction,
+                revision_instruction=combined_instruction or None,
             )
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms
             logger.info("[Day %d] Phase 2: Content Generation ... OK (%.1fs)", day, phase2_ms / 1000)
 
-            # Phase 3: Critic Evaluation
+            # Phase 3: Critic Evaluation (3層詳細結果を取得)
             phase3_start = time.monotonic()
-            critic_score = await self._critic.evaluate(prev_state, curr_state, diary_text, event)
+            critic_result = await self._critic.evaluate_full(prev_state, curr_state, diary_text, event)
+            critic_score = critic_result.final_score
+            last_critic_result = critic_result
             phase3_ms = int((time.monotonic() - phase3_start) * 1000)
             phase3_total_ms += phase3_ms
             all_scores.append(critic_score)
@@ -286,6 +308,20 @@ class PipelineRunner:
         expected_delta = compute_expected_delta(event, self._config.emotion_sensitivity)
         deviation = compute_deviation(prev_state, curr_state, expected_delta)
         actual_delta = {param: getattr(curr_state, param) - getattr(prev_state, param) for param in expected_delta}
+
+        # Critic ログ蓄積
+        if last_critic_result is not None:
+            log_entry = CriticLogEntry(
+                day=day,
+                scores=last_critic_result,
+                actor_input_summary=(
+                    f"state={prev_state.fatigue:.2f}/{prev_state.motivation:.2f}"
+                    f"/{prev_state.stress:.2f} event={event.description[:50]}"
+                ),
+                generated_text_hash=compute_text_hash(final_diary),
+                failure_patterns=extract_failure_patterns(last_critic_result),
+            )
+            self._critic_log.add(log_entry)
 
         return GenerationRecord(
             day=day,

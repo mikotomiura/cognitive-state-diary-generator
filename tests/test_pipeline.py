@@ -15,7 +15,7 @@ from csdg.config import CSDGConfig
 from csdg.engine.actor import Actor
 from csdg.engine.critic import Critic, judge
 from csdg.engine.pipeline import PipelineRunner, RetryCandidate
-from csdg.schemas import CharacterState, CriticScore, DailyEvent
+from csdg.schemas import CharacterState, CriticResult, CriticScore, DailyEvent, LayerScore
 
 # ====================================================================
 # ヘルパー
@@ -55,6 +55,26 @@ def _make_reject_score(
         persona_deviation=persona,
         reject_reason="整合性が低い",
         revision_instruction="時間的整合性を改善してください",
+    )
+
+
+def _make_default_layer() -> LayerScore:
+    """デフォルトの LayerScore を返す。"""
+    return LayerScore(
+        temporal_consistency=5.0,
+        emotional_plausibility=5.0,
+        persona_deviation=5.0,
+        details={},
+    )
+
+
+def _wrap_as_result(score: CriticScore) -> CriticResult:
+    """CriticScore を CriticResult にラップする。"""
+    return CriticResult(
+        rule_based=_make_default_layer(),
+        statistical=_make_default_layer(),
+        llm_judge=_make_default_layer(),
+        final_score=score,
     )
 
 
@@ -125,7 +145,7 @@ class TestNormalFlow:
         updated_state = state.model_copy(update={"stress": 0.0})
         mock_actor.update_state.return_value = updated_state
         mock_actor.generate_diary.return_value = "今日の日記です。" * 10
-        mock_critic.evaluate.return_value = _make_pass_score()
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(7)
         log = await runner.run(events, state)
@@ -164,7 +184,7 @@ class TestRetry:
 
         reject = _make_reject_score()
         pass_score = _make_pass_score()
-        mock_critic.evaluate.side_effect = [reject, pass_score]
+        mock_critic.evaluate_full.side_effect = [_wrap_as_result(reject), _wrap_as_result(pass_score)]
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -203,7 +223,7 @@ class TestTemperatureDecay:
         reject1 = _make_reject_score(temporal=2)
         reject2 = _make_reject_score(temporal=2, emotional=3)
         reject3 = _make_reject_score(temporal=2, emotional=2)
-        mock_critic.evaluate.side_effect = [reject1, reject2, reject3]
+        mock_critic.evaluate_full.side_effect = [_wrap_as_result(reject1), _wrap_as_result(reject2), _wrap_as_result(reject3)]
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -249,7 +269,7 @@ class TestBestOfN:
         reject1 = _make_reject_score(temporal=2, emotional=2, persona=4)  # 8
         reject2 = _make_reject_score(temporal=2, emotional=4, persona=4)  # 10
         reject3 = _make_reject_score(temporal=2, emotional=3, persona=4)  # 9
-        mock_critic.evaluate.side_effect = [reject1, reject2, reject3]
+        mock_critic.evaluate_full.side_effect = [_wrap_as_result(reject1), _wrap_as_result(reject2), _wrap_as_result(reject3)]
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -332,7 +352,7 @@ class TestPhase1Fallback:
             ],
         )
         mock_actor.generate_diary.return_value = "フォールバック日記" * 10
-        mock_critic.evaluate.return_value = _make_pass_score()
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -374,7 +394,7 @@ class TestMemoryBuffer:
 
         mock_actor.update_state.side_effect = _update_preserving_memory
         mock_actor.generate_diary.return_value = "テスト日記です。" * 10
-        mock_critic.evaluate.return_value = _make_pass_score()
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(5)
         log = await runner.run(events, state)
@@ -458,7 +478,7 @@ class TestDaySkip:
 
         mock_actor.update_state.side_effect = update_state_side_effect
         mock_actor.generate_diary.return_value = "日記テキスト" * 10
-        mock_critic.evaluate.return_value = _make_pass_score()
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(5)
         log = await runner.run(events, state)
@@ -501,7 +521,7 @@ class TestPipelineAbort:
 
         mock_actor.update_state.side_effect = update_state_side_effect
         mock_actor.generate_diary.return_value = "日記テキスト" * 10
-        mock_critic.evaluate.return_value = _make_pass_score()
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(7)
         log = await runner.run(events, state)
