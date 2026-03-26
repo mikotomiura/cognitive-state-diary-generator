@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -15,9 +16,10 @@ from csdg.config import CSDGConfig
 from csdg.engine.actor import Actor
 from csdg.engine.critic import Critic, judge
 from csdg.engine.pipeline import PipelineRunner, RetryCandidate
-
-from pathlib import Path
 from csdg.schemas import CharacterState, CriticResult, CriticScore, DailyEvent, LayerScore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ====================================================================
 # ヘルパー
@@ -391,6 +393,7 @@ class TestMemoryBuffer:
         async def _update_preserving_memory(
             prev: CharacterState,
             event: DailyEvent,
+            long_term_context: dict | None = None,
         ) -> CharacterState:
             return (prev.model_copy(update={"stress": 0.0}), "テストreason")
 
@@ -471,6 +474,7 @@ class TestDaySkip:
         async def update_state_side_effect(
             prev: CharacterState,
             event: DailyEvent,
+            long_term_context: dict | None = None,
         ) -> tuple[CharacterState, str]:
             nonlocal call_count
             call_count += 1
@@ -516,6 +520,7 @@ class TestPipelineAbort:
         async def update_state_side_effect(
             prev: CharacterState,
             event: DailyEvent,
+            long_term_context: dict | None = None,
         ) -> tuple[CharacterState, str]:
             if event.day >= 3:
                 raise RuntimeError("連続失敗シミュレーション")
@@ -598,3 +603,87 @@ class TestPromptHashes:
 
         assert "Test.md" in log.prompt_hashes
         assert len(log.prompt_hashes["Test.md"]) == 64
+
+
+# ====================================================================
+# 統合ギャップ修正: llm_client、長期記憶注入、CriticLog 永続化
+# ====================================================================
+
+
+class TestIntegrationGapFixes:
+    """統合ギャップ修正のテスト。"""
+
+    def test_pipeline_runner_accepts_llm_client(
+        self,
+        config: CSDGConfig,
+        mock_actor: Actor,
+        mock_critic: Critic,
+    ) -> None:
+        """PipelineRunner が llm_client パラメータを受け入れる。"""
+        mock_client = AsyncMock()
+        runner = PipelineRunner(config, mock_actor, mock_critic, llm_client=mock_client)
+        assert runner._llm_client is mock_client
+
+    @pytest.mark.asyncio()
+    async def test_llm_client_passed_to_memory_update(
+        self,
+        config: CSDGConfig,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+    ) -> None:
+        """run() が memory.update_after_day() に llm_client を渡す。"""
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        mock_client = AsyncMock()
+        runner = PipelineRunner(config, mock_actor, mock_critic, llm_client=mock_client)
+
+        updated = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated, "テストreason")
+        mock_actor.generate_diary.return_value = "テスト日記" * 10
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
+
+        # MemoryManager.update_after_day をモックして llm_client が渡されるか検証
+        with patch.object(runner._memory, "update_after_day", new_callable=AsyncMock) as mock_update:
+            await runner.run([_make_event(1)], state)
+            mock_update.assert_called_once()
+            call_kwargs = mock_update.call_args
+            assert call_kwargs.kwargs.get("llm_client") is mock_client
+
+    @pytest.mark.asyncio()
+    async def test_long_term_context_passed_to_actor(
+        self,
+        config: CSDGConfig,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+    ) -> None:
+        """run_single_day() が Actor に long_term_context を渡す。"""
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        runner = PipelineRunner(config, mock_actor, mock_critic)
+
+        updated = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated, "テストreason")
+        mock_actor.generate_diary.return_value = "テスト日記" * 10
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
+
+        await runner.run_single_day(_make_event(1), state, day=1)
+
+        # update_state に long_term_context が渡されている
+        update_call = mock_actor.update_state.call_args
+        assert "long_term_context" in update_call.kwargs
+
+        # generate_diary に long_term_context が渡されている
+        diary_call = mock_actor.generate_diary.call_args
+        assert "long_term_context" in diary_call.kwargs
+
+    def test_critic_log_property(
+        self,
+        runner: PipelineRunner,
+    ) -> None:
+        """PipelineRunner.critic_log プロパティが CriticLog を返す。"""
+        from csdg.engine.critic_log import CriticLog
+        assert isinstance(runner.critic_log, CriticLog)

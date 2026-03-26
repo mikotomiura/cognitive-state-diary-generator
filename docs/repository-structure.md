@@ -72,6 +72,7 @@ cognitive-State-Diary-generator/
 ├── output/                            # パイプライン出力 (Git管理外)
 │   ├── day_01.md 〜 day_07.md         #   生成された日記ファイル
 │   ├── generation_log.json            #   実行ログ
+│   ├── critic_log.jsonl               #   Critic 評価ログ
 │   └── state_trajectory.png           #   状態推移グラフ
 │
 ├── .steering/                         # 構造化作業ノート
@@ -395,6 +396,7 @@ def mock_llm_client() -> LLMClient:
 |---|---|---|---|
 | `day_01.md` 〜 `day_07.md` | Markdown (YAMLフロントマター付き) | `pipeline.py` | 日記本文 + メタデータ |
 | `generation_log.json` | JSON | `pipeline.py` | パイプライン全実行ログ |
+| `critic_log.jsonl` | JSON Lines | `pipeline.py` | Critic 評価ログ (Day別3層スコア + failure_patterns) |
 | `state_trajectory.png` | PNG (1200×800px) | `visualization.py` | 感情パラメータ推移グラフ |
 
 ### 7.3 ファイル名規則

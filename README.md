@@ -94,6 +94,7 @@ python -m csdg.main --help
 output/
   day_01.md 〜 day_07.md    # 生成された日記 (YAML frontmatter + Markdown)
   generation_log.json       # 実行ログ (リトライ数、スコア推移等)
+  critic_log.jsonl          # Critic 評価ログ (JSON Lines)
   state_trajectory.png      # 感情パラメータ + CriticScore の推移グラフ
 ```
 

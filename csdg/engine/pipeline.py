@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from csdg.config import CSDGConfig
     from csdg.engine.actor import Actor
     from csdg.engine.critic import Critic
+    from csdg.engine.llm_client import LLMClient
     from csdg.schemas import CriticResult, DailyEvent
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class PipelineRunner:
         memory_manager: MemoryManager | None = None,
         critic_log: CriticLog | None = None,
         prompts_dir: Path | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         """PipelineRunner を初期化する。
 
@@ -87,6 +89,7 @@ class PipelineRunner:
             memory_manager: メモリマネージャ。None の場合はデフォルトで生成。
             critic_log: Critic ログ。None の場合は空のログで生成。
             prompts_dir: プロンプトファイルのディレクトリパス。
+            llm_client: LLM クライアント。メモリの LLM 抽出に使用する。
         """
         self._config = config
         self._actor = actor
@@ -95,7 +98,13 @@ class PipelineRunner:
             window_size=config.memory_window_size,
         )
         self._critic_log = critic_log or CriticLog()
+        self._llm_client = llm_client
         self._prompt_hashes = self._compute_prompt_hashes(prompts_dir or Path("prompts"))
+
+    @property
+    def critic_log(self) -> CriticLog:
+        """Critic ログを返す。"""
+        return self._critic_log
 
     async def run(
         self,
@@ -133,7 +142,7 @@ class PipelineRunner:
                 if record.fallback_used:
                     total_fallbacks += 1
 
-                await self._memory.update_after_day(record.diary_text, day)
+                await self._memory.update_after_day(record.diary_text, day, llm_client=self._llm_client)
                 current_state = record.final_state.model_copy(
                     update={"memory_buffer": self._memory.get_memory_buffer_for_state()},
                 )
@@ -204,10 +213,15 @@ class PipelineRunner:
         phase1_start = time.monotonic()
         curr_state: CharacterState | None = None
 
+        # 長期記憶コンテキストを取得
+        actor_context = self._memory.get_context_for_actor()
+
         delta_reason = ""
         for attempt in range(self._config.max_retries):
             try:
-                curr_state, delta_reason = await self._actor.update_state(prev_state, event)
+                curr_state, delta_reason = await self._actor.update_state(
+                    prev_state, event, long_term_context=actor_context,
+                )
                 break
             except (ValidationError, ValueError) as exc:
                 logger.warning(
@@ -255,6 +269,7 @@ class PipelineRunner:
                 curr_state,
                 event,
                 revision_instruction=combined_instruction or None,
+                long_term_context=actor_context,
             )
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms

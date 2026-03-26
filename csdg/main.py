@@ -181,7 +181,7 @@ async def run_pipeline(args: argparse.Namespace) -> int:
     )
     actor = Actor(client, config)
     critic = Critic(client, config)
-    runner = PipelineRunner(config, actor, critic)
+    runner = PipelineRunner(config, actor, critic, llm_client=client)
 
     pipeline_log = await runner.run(events, INITIAL_STATE)
 
@@ -202,7 +202,12 @@ async def run_pipeline(args: argparse.Namespace) -> int:
     )
     logger.info("[CSDG] Saved: %s", log_path)
 
-    # 9. 可視化
+    # 9. CriticLog 永続化
+    critic_log_path = Path(output_dir) / "critic_log.jsonl"
+    runner.critic_log.save(critic_log_path)
+    logger.info("[CSDG] Saved: %s", critic_log_path)
+
+    # 10. 可視化
     if not args.skip_visualization:
         from csdg.visualization import generate_state_trajectory
 

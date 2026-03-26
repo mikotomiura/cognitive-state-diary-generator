@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from csdg.engine.state_transition import compute_next_state
 from csdg.schemas import CharacterState, DailyEvent, EmotionalDelta
@@ -57,6 +57,7 @@ class Actor:
         self,
         prev_state: CharacterState,
         event: DailyEvent,
+        long_term_context: dict[str, Any] | None = None,
     ) -> tuple[CharacterState, str]:
         """Phase 1: イベントに基づきキャラクターの内部状態を更新する。
 
@@ -77,7 +78,7 @@ class Actor:
             FileNotFoundError: プロンプトファイルが見つからない場合。
         """
         system_prompt = self._load_prompt("System_Persona.md")
-        user_prompt = self._build_state_update_prompt(prev_state, event)
+        user_prompt = self._build_state_update_prompt(prev_state, event, long_term_context)
 
         logger.debug(
             "Phase 1: update_state called (day=%d, emotional_impact=%.2f)",
@@ -136,6 +137,7 @@ class Actor:
         state: CharacterState,
         event: DailyEvent,
         revision_instruction: str | None = None,
+        long_term_context: dict[str, Any] | None = None,
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -156,7 +158,7 @@ class Actor:
             FileNotFoundError: プロンプトファイルが見つからない場合。
         """
         system_prompt = self._load_prompt("System_Persona.md")
-        user_prompt = self._build_generator_prompt(state, event, revision_instruction)
+        user_prompt = self._build_generator_prompt(state, event, revision_instruction, long_term_context)
 
         logger.debug(
             "Phase 2: generate_diary called (day=%d, revision=%s)",
@@ -215,6 +217,7 @@ class Actor:
         self,
         prev_state: CharacterState,
         event: DailyEvent,
+        long_term_context: dict[str, Any] | None = None,
     ) -> str:
         """Phase 1 用の User Prompt を構築する。
 
@@ -224,6 +227,7 @@ class Actor:
         Args:
             prev_state: 前日のキャラクター内部状態。
             event: 当日のイベント定義。
+            long_term_context: 長期記憶コンテキスト。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -231,17 +235,23 @@ class Actor:
         template = self._load_prompt("Prompt_StateUpdate.md")
         memory = "\n".join(prev_state.memory_buffer) or "(記憶なし)"
 
-        return template.format(
+        prompt = template.format(
             previous_state=prev_state.model_dump_json(indent=2),
             event=event.model_dump_json(indent=2),
             memory_buffer=memory,
         )
+
+        if long_term_context:
+            prompt += self._format_long_term_context(long_term_context)
+
+        return prompt
 
     def _build_generator_prompt(
         self,
         state: CharacterState,
         event: DailyEvent,
         revision: str | None,
+        long_term_context: dict[str, Any] | None = None,
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -252,6 +262,7 @@ class Actor:
             state: 今日のキャラクター内部状態。
             event: 当日のイベント定義。
             revision: Critic からの修正指示。None の場合は空文字列。
+            long_term_context: 長期記憶コンテキスト。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -260,9 +271,42 @@ class Actor:
         memory = "\n".join(state.memory_buffer) or "(記憶なし)"
         revision_section = f"## 修正指示\n{revision}" if revision else ""
 
-        return template.format(
+        prompt = template.format(
             current_state=state.model_dump_json(indent=2),
             event=event.model_dump_json(indent=2),
             memory_buffer=memory,
             revision_instruction=revision_section,
         )
+
+        if long_term_context:
+            prompt += self._format_long_term_context(long_term_context)
+
+        return prompt
+
+    @staticmethod
+    def _format_long_term_context(context: dict[str, Any]) -> str:
+        """長期記憶コンテキストをプロンプト用テキストに整形する。"""
+        sections: list[str] = ["\n\n---\n\n## 長期記憶 (これまでの蓄積)\n"]
+
+        beliefs: list[str] = context.get("beliefs", [])
+        if beliefs:
+            sections.append("### とこみの信念")
+            for b in beliefs:
+                sections.append(f"- {b}")
+
+        themes: list[str] = context.get("recurring_themes", [])
+        if themes:
+            sections.append("\n### 繰り返し現れるテーマ")
+            for t in themes:
+                sections.append(f"- {t}")
+
+        turning_points: list[dict[str, Any]] = context.get("turning_points", [])
+        if turning_points:
+            sections.append("\n### 転換点")
+            for tp in turning_points:
+                sections.append(f"- Day {tp['day']}: {tp['summary']}")
+
+        if len(sections) == 1:
+            return ""
+
+        return "\n".join(sections)
