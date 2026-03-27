@@ -28,7 +28,8 @@ Day 1 〜 Day 7 ループ:
 - **半数式化された状態遷移** -- 決定論的な数式ベース + LLM による解釈的補正で再現性を確保
 - **3 層 Critic** -- ルールベース検証 + 統計的検証 + LLM 定性評価の重み付き統合
 - **2 層メモリ** -- 短期記憶 (直近 3 日) + 長期記憶 (信念・テーマ・転換点)
-- **Self-Healing** -- LLM 出力のパースエラーに対するリトライ + Best-of-N フォールバック
+- **余韻フィードバック** -- 直近 3 日の末尾段落を抽出・蓄積し、生成プロンプトに注入することで余韻フレーズの反復を防止
+- **Self-Healing** -- LLM 出力のパースエラーに対するリトライ + Best-of-N フォールバック + API 過負荷時の指数バックオフリトライ
 
 ## セットアップ
 
@@ -115,6 +116,7 @@ csdg/
     memory.py             # 2層メモリ (ShortTerm + LongTerm)
     pipeline.py           # パイプライン制御 (リトライ / Temperature Decay / Best-of-N)
     llm_client.py         # LLM API 抽象化 (Anthropic Claude 実装)
+    prompt_loader.py      # プロンプトファイル読み込みユーティリティ
   main.py                 # CLI エントリポイント
   visualization.py        # 状態推移グラフ生成
 
@@ -124,6 +126,7 @@ prompts/
   Prompt_Generator.md     # Phase 2 プロンプト
   Prompt_Critic.md        # Phase 3 プロンプト
   Prompt_MemoryExtract.md # 長期記憶の信念・テーマ抽出
+  System_MemoryManager.md # メモリ管理システムプロンプト
 ```
 
 ### Critic 3 層構造
@@ -175,7 +178,7 @@ ruff format csdg/
 | 2 | positive | +0.6 | 古書店で西田幾多郎の初版本を発見 |
 | 3 | negative | -0.5 | コードレビュー会で設計提案を一蹴される |
 | **4** | **negative** | **-0.9** | **全社 AI 自動化ロードマップ発表 (転機)** |
-| 5 | neutral | +0.4 | ミナとの会話で「あなたは表現者だ」 |
+| 5 | neutral | +0.15 | ミナとの会話で「あなたは表現者だ」 |
 | 6 | neutral | +0.5 | 大学院時代の現象学ノートを発見 |
 | 7 | positive | +0.5 | 暗黙知の可視化を職場に提案 |
 
