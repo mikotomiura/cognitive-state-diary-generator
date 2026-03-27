@@ -18,6 +18,8 @@
 
 {revision_instruction}
 
+{prev_endings}
+
 ---
 
 ## 日記の構成

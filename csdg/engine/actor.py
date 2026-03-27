@@ -141,6 +141,7 @@ class Actor:
         revision_instruction: str | None = None,
         long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
         temperature: float | None = None,
+        prev_endings: list[str] | None = None,
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -154,6 +155,7 @@ class Actor:
             revision_instruction: Critic からの修正指示 (リトライ時のみ)。
             long_term_context: 長期記憶コンテキスト(信念・テーマ・転換点)。None の場合は注入しない。
             temperature: 生成時の Temperature。None の場合は config のデフォルト値を使用。
+            prev_endings: 直近の日記の余韻リスト。反復回避のためプロンプトに注入する。
 
         Returns:
             生成されたブログ日記テキスト (Markdown)。
@@ -163,7 +165,9 @@ class Actor:
             FileNotFoundError: プロンプトファイルが見つからない場合。
         """
         system_prompt = load_prompt(self._prompts_dir, "System_Persona.md")
-        user_prompt = self._build_generator_prompt(state, event, revision_instruction, long_term_context)
+        user_prompt = self._build_generator_prompt(
+            state, event, revision_instruction, long_term_context, prev_endings,
+        )
 
         logger.debug(
             "Phase 2: generate_diary called (day=%d, revision=%s)",
@@ -240,6 +244,7 @@ class Actor:
         event: DailyEvent,
         revision: str | None,
         long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
+        prev_endings: list[str] | None = None,
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -251,6 +256,7 @@ class Actor:
             event: 当日のイベント定義。
             revision: Critic からの修正指示。None の場合は空文字列。
             long_term_context: 長期記憶コンテキスト。
+            prev_endings: 直近の日記の余韻リスト。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -259,11 +265,23 @@ class Actor:
         memory = "\n".join(state.memory_buffer) or "(記憶なし)"
         revision_section = f"## 修正指示\n{revision}" if revision else ""
 
+        if prev_endings:
+            endings_text = "\n".join(f"- {e}" for e in prev_endings)
+            endings_section = (
+                "## 過去の余韻(使用済み)\n"
+                "以下は直近の日記の締めくくりです。"
+                "これらと同じ文・同じフレーズ・同じイメージでの締めくくりは避けてください。\n"
+                f"{endings_text}"
+            )
+        else:
+            endings_section = ""
+
         prompt = template.format(
             current_state=state.model_dump_json(indent=2),
             event=event.model_dump_json(indent=2),
             memory_buffer=memory,
             revision_instruction=revision_section,
+            prev_endings=endings_section,
         )
 
         if long_term_context:

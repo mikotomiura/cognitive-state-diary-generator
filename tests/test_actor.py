@@ -42,7 +42,8 @@ def prompts_dir(tmp_path: Path) -> Path:
         "state: {current_state}\n"
         "event: {event}\n"
         "memory: {memory_buffer}\n"
-        "{revision_instruction}",
+        "{revision_instruction}\n"
+        "{prev_endings}",
         encoding="utf-8",
     )
 
@@ -351,3 +352,54 @@ class TestFormatLongTermContext:
         result = Actor._format_long_term_context({"beliefs": ["信念A"], "recurring_themes": [], "turning_points": []})
         assert "とこみの信念" in result
         assert "繰り返し現れるテーマ" not in result
+
+
+# ====================================================================
+# prev_endings のプロンプト注入テスト
+# ====================================================================
+
+
+class TestPrevEndings:
+    """prev_endings のプロンプト注入テスト。"""
+
+    @pytest.mark.asyncio()
+    async def test_prev_endings_injected_into_prompt(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+    ) -> None:
+        """prev_endings が渡された場合、プロンプトに余韻セクションが含まれる。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_text.return_value = "日記テキスト"
+
+        from csdg.schemas import DailyEvent
+
+        event = DailyEvent(day=2, event_type="neutral", domain="仕事", description="テストイベントの説明文です", emotional_impact=0.2)
+        state = CharacterState(fatigue=0.1, motivation=0.2, stress=-0.1, current_focus="x", growth_theme="x")
+
+        await actor.generate_diary(state, event, prev_endings=["余韻A......。", "余韻B......。"])
+
+        user_prompt = mock_llm_client.generate_text.call_args.kwargs["user_prompt"]
+        assert "過去の余韻" in user_prompt
+        assert "余韻A" in user_prompt
+        assert "余韻B" in user_prompt
+
+    @pytest.mark.asyncio()
+    async def test_no_prev_endings_no_section(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+    ) -> None:
+        """prev_endings が None の場合、余韻セクションが含まれない。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_text.return_value = "日記テキスト"
+
+        from csdg.schemas import DailyEvent
+
+        event = DailyEvent(day=1, event_type="neutral", domain="仕事", description="テストイベントの説明文です", emotional_impact=0.2)
+        state = CharacterState(fatigue=0.1, motivation=0.2, stress=-0.1, current_focus="x", growth_theme="x")
+
+        await actor.generate_diary(state, event, prev_endings=None)
+
+        user_prompt = mock_llm_client.generate_text.call_args.kwargs["user_prompt"]
+        assert "過去の余韻" not in user_prompt

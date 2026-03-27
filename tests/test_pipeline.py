@@ -18,7 +18,7 @@ from anthropic._exceptions import OverloadedError
 from csdg.config import CSDGConfig
 from csdg.engine.actor import Actor
 from csdg.engine.critic import Critic, judge
-from csdg.engine.pipeline import PipelineRunner, RetryCandidate
+from csdg.engine.pipeline import PipelineRunner, RetryCandidate, _extract_ending
 from csdg.schemas import CharacterState, CriticResult, CriticScore, DailyEvent, LayerScore
 
 if TYPE_CHECKING:
@@ -830,3 +830,100 @@ class TestOverloadedRetry:
         assert len(log.records) == 2
         recorded_days = [r.day for r in log.records]
         assert 2 not in recorded_days
+
+
+# ====================================================================
+# _extract_ending: 末尾段落の抽出
+# ====================================================================
+
+
+class TestExtractEnding:
+    """_extract_ending のテスト。"""
+
+    def test_multiple_paragraphs(self) -> None:
+        text = "段落1。\n\n段落2。\n\n最後の余韻......。"
+        assert _extract_ending(text) == "最後の余韻......。"
+
+    def test_single_paragraph(self) -> None:
+        text = "これが唯一の段落です。"
+        assert _extract_ending(text) == "これが唯一の段落です。"
+
+    def test_empty_string(self) -> None:
+        assert _extract_ending("") == ""
+
+    def test_trailing_whitespace(self) -> None:
+        text = "段落1。\n\n余韻......。\n\n"
+        assert _extract_ending(text) == "余韻......。"
+
+
+# ====================================================================
+# prev_endings の蓄積と受け渡し
+# ====================================================================
+
+
+class TestPrevEndingsTracking:
+    """prev_endings の蓄積と generate_diary への受け渡しテスト。"""
+
+    @pytest.mark.asyncio()
+    async def test_prev_endings_passed_to_generate_diary(
+        self,
+        runner: PipelineRunner,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+    ) -> None:
+        """run() が generate_diary に prev_endings を渡す。"""
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        updated_state = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
+        mock_actor.generate_diary.return_value = "段落1。\n\n余韻A......。"
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
+
+        events = _make_events(2)
+        await runner.run(events, state)
+
+        # Day 2 の generate_diary 呼び出しで prev_endings が渡されている
+        day2_call = mock_actor.generate_diary.call_args_list[1]
+        assert "prev_endings" in day2_call.kwargs
+        assert len(day2_call.kwargs["prev_endings"]) == 1
+        assert "余韻A" in day2_call.kwargs["prev_endings"][0]
+
+    @pytest.mark.asyncio()
+    async def test_prev_endings_limited_to_3(
+        self,
+        runner: PipelineRunner,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+    ) -> None:
+        """prev_endings は直近3件に制限される。"""
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        updated_state = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
+
+        call_count = 0
+
+        async def generate_with_unique_ending(
+            *args: object, **kwargs: object,
+        ) -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"段落。\n\n余韻{call_count}......。"
+
+        mock_actor.generate_diary.side_effect = generate_with_unique_ending
+        mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
+
+        events = _make_events(5)
+        await runner.run(events, state)
+
+        # Day 5 の呼び出しで prev_endings が3件に制限されている
+        day5_call = mock_actor.generate_diary.call_args_list[4]
+        prev_endings = day5_call.kwargs["prev_endings"]
+        assert len(prev_endings) == 3
+        assert "余韻2" in prev_endings[0]
+        assert "余韻3" in prev_endings[1]
+        assert "余韻4" in prev_endings[2]

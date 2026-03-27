@@ -46,6 +46,22 @@ _MAX_OVERLOAD_RETRIES = 3
 _OVERLOAD_BASE_DELAY_SEC = 30
 _FALLBACK_DESCRIPTION_LENGTH = 50
 _MAX_REVISION_LENGTH = 500
+_MAX_PREV_ENDINGS = 3
+
+
+def _extract_ending(diary_text: str) -> str:
+    """日記テキストの末尾段落（余韻）を抽出する。
+
+    Args:
+        diary_text: 日記テキスト全文。
+
+    Returns:
+        末尾の非空段落。段落がない場合は空文字列。
+    """
+    paragraphs = [p.strip() for p in diary_text.strip().split("\n\n") if p.strip()]
+    if not paragraphs:
+        return ""
+    return paragraphs[-1]
 
 
 def _sanitize_revision(instruction: str | None) -> str | None:
@@ -143,6 +159,7 @@ class PipelineRunner:
         total_retries = 0
         total_fallbacks = 0
         prev_diary: str | None = None
+        prev_endings: list[str] = []
 
         for event in events:
             day = event.day
@@ -151,7 +168,11 @@ class PipelineRunner:
 
             while overload_attempts <= _MAX_OVERLOAD_RETRIES:
                 try:
-                    record = await self.run_single_day(event, current_state, day, prev_diary=prev_diary)
+                    record = await self.run_single_day(
+                        event, current_state, day,
+                        prev_diary=prev_diary,
+                        prev_endings=list(prev_endings),
+                    )
                     records.append(record)
                     total_retries += record.retry_count
                     if record.fallback_used:
@@ -162,6 +183,10 @@ class PipelineRunner:
                         update={"memory_buffer": self._memory.get_memory_buffer_for_state()},
                     )
                     prev_diary = record.diary_text
+                    ending = _extract_ending(record.diary_text)
+                    if ending:
+                        prev_endings.append(ending)
+                        prev_endings = prev_endings[-_MAX_PREV_ENDINGS:]
                     consecutive_failures = 0
                     day_success = True
                     break
@@ -230,6 +255,7 @@ class PipelineRunner:
         prev_state: CharacterState,
         day: int,
         prev_diary: str | None = None,
+        prev_endings: list[str] | None = None,
     ) -> GenerationRecord:
         """1Dayのパイプラインを実行する。
 
@@ -309,6 +335,7 @@ class PipelineRunner:
                 revision_instruction=combined_instruction or None,
                 long_term_context=actor_context,
                 temperature=temperature,
+                prev_endings=prev_endings,
             )
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms
