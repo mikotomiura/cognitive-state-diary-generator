@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -47,6 +48,98 @@ _OVERLOAD_BASE_DELAY_SEC = 30
 _FALLBACK_DESCRIPTION_LENGTH = 50
 _MAX_REVISION_LENGTH = 500
 _MAX_PREV_ENDINGS = 3
+_MAX_PREV_IMAGES = 5
+_IMAGE_CLIP_LENGTH = 50
+
+# シーンを構成する場所・物のマーカー語
+_SCENE_MARKERS = (
+    "古書店",
+    "電車",
+    "コンビニ",
+    "会議室",
+    "カフェ",
+    "窓",
+    "駅",
+    "道",
+    "部屋",
+    "図書館",
+    "公園",
+    "蛍光灯",
+    "缶コーヒー",
+    "ノート",
+    "本",
+    "栞",
+    "ペン",
+    "キーボード",
+    "明かり",
+    "匂い",
+    "自動販売機",
+    "段ボール",
+)
+
+# 書き出しパターン分類用キーワード
+_OPENING_METAPHOR_KEYWORDS = ("まるで", "のような", "ように")
+_OPENING_SENSORY_KEYWORDS = ("匂い", "音", "光", "温度", "風", "空気", "肌")
+_OPENING_RECALL_KEYWORDS = ("あの頃", "あの日", "大学院", "昔", "思い出", "記憶")
+
+
+def _extract_key_images(diary_text: str, max_images: int = _MAX_PREV_IMAGES) -> list[str]:
+    """日記テキストからシーンを構成するキーフレーズを抽出する。
+
+    場所・物のマーカー語を含む文を検出し、短いクリップとして返す。
+    Day 間で蓄積し、Generator プロンプトに「使用済みシーン」として注入することで
+    イメージの反復を防止する。
+
+    Args:
+        diary_text: 日記テキスト全文。
+        max_images: 返すキーフレーズの最大数。
+
+    Returns:
+        シーンのキーフレーズリスト。
+    """
+    images: list[str] = []
+    seen_markers: set[str] = set()
+    sentences = re.split(r"[。\n]", diary_text)
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence or len(sentence) < 5:
+            continue
+        for marker in _SCENE_MARKERS:
+            if marker in sentence and marker not in seen_markers:
+                images.append(sentence[:_IMAGE_CLIP_LENGTH])
+                seen_markers.add(marker)
+                break
+    return images[:max_images]
+
+
+def _detect_opening_pattern(diary_text: str) -> str:
+    """日記の冒頭から書き出しパターンを分類する。
+
+    Prompt_Generator.md で定義された6パターン (比喩型/五感型/会話型/問い型/断片型/回想型)
+    のいずれかに分類する。判定できない場合は「その他」を返す。
+
+    Args:
+        diary_text: 日記テキスト全文。
+
+    Returns:
+        パターン名の文字列。
+    """
+    first_line = diary_text.strip().split("\n")[0] if diary_text.strip() else ""
+    head = first_line[:80]
+
+    if any(kw in head for kw in _OPENING_METAPHOR_KEYWORDS):
+        return "比喩型"
+    if head.startswith(("\u300c", "\u300e")):  # 「 or 『
+        return "会話型"
+    if head.endswith(("?", "\uff1f", "\u3060\u308d\u3046\u304b")):  # ? / full-width ? / darouka
+        return "問い型"
+    if any(kw in head for kw in _OPENING_SENSORY_KEYWORDS):
+        return "五感型"
+    if any(kw in head for kw in _OPENING_RECALL_KEYWORDS):
+        return "回想型"
+    if first_line and len(first_line) < 30:
+        return "断片型"
+    return "その他"
 
 
 def _extract_ending(diary_text: str) -> str:
@@ -65,10 +158,17 @@ def _extract_ending(diary_text: str) -> str:
 
 
 def _sanitize_revision(instruction: str | None) -> str | None:
-    """revision_instruction の長さ制限とサニタイズを行う。"""
+    """revision_instruction の長さ制限・制御文字除去・デリミタ付与を行う。
+
+    Critic LLM の出力が Actor プロンプトに注入されるため、
+    制御文字の除去と XML デリミタによる範囲限定を行う。
+    """
     if instruction is None:
         return None
-    return instruction[:_MAX_REVISION_LENGTH]
+    # 制御文字を除去 (改行・タブは許容)
+    sanitized = "".join(c for c in instruction if c >= " " or c in "\n\t")
+    sanitized = sanitized[:_MAX_REVISION_LENGTH]
+    return f"<revision>\n{sanitized}\n</revision>"
 
 
 def _total_score(score: CriticScore) -> int:
@@ -161,6 +261,8 @@ class PipelineRunner:
         total_fallbacks = 0
         prev_diary: str | None = None
         prev_endings: list[str] = []
+        prev_images: list[str] = []
+        used_openings: list[str] = []
 
         for event in events:
             day = event.day
@@ -175,6 +277,8 @@ class PipelineRunner:
                         day,
                         prev_diary=prev_diary,
                         prev_endings=list(prev_endings),
+                        prev_images=list(prev_images),
+                        used_openings=list(used_openings),
                     )
                     records.append(record)
                     total_retries += record.retry_count
@@ -190,6 +294,13 @@ class PipelineRunner:
                     if ending:
                         prev_endings.append(ending)
                         prev_endings = prev_endings[-_MAX_PREV_ENDINGS:]
+                    # シーン描写の蓄積 (反復防止用)
+                    new_images = _extract_key_images(record.diary_text)
+                    prev_images.extend(new_images)
+                    prev_images = prev_images[-_MAX_PREV_IMAGES:]
+                    # 書き出しパターンの蓄積
+                    opening = _detect_opening_pattern(record.diary_text)
+                    used_openings.append(f"Day {day}: {opening}")
                     consecutive_failures = 0
                     day_success = True
                     break
@@ -227,7 +338,9 @@ class PipelineRunner:
                     break
 
         pipeline_ms = int((time.monotonic() - pipeline_start) * 1000)
-        api_calls = sum(1 + r.retry_count for r in records) * _PHASE_COUNT
+        # Phase 1: 各 Day 1回 (成功時) + Phase 2/3: 各 attempt 2回
+        # Phase 1 のリトライは retry_count に含まれないため、最低1回として計上
+        api_calls = sum(1 + (1 + r.retry_count) * 2 for r in records)
 
         logger.info(
             "[CSDG] Pipeline complete (%d/%d days, %d retries, %d fallbacks)",
@@ -259,6 +372,8 @@ class PipelineRunner:
         day: int,
         prev_diary: str | None = None,
         prev_endings: list[str] | None = None,
+        prev_images: list[str] | None = None,
+        used_openings: list[str] | None = None,
     ) -> GenerationRecord:
         """1Dayのパイプラインを実行する。
 
@@ -270,6 +385,9 @@ class PipelineRunner:
             prev_state: 前日のキャラクター内部状態。
             day: 経過日数。
             prev_diary: 前日の日記テキスト (trigram overlap チェック用)。
+            prev_endings: 直近の日記の余韻リスト (反復回避用)。
+            prev_images: 過去の日記で使用されたシーン描写 (反復回避用)。
+            used_openings: 過去の日記で使用された書き出しパターン (反復回避用)。
 
         Returns:
             1Day分の生成記録。
@@ -341,6 +459,8 @@ class PipelineRunner:
                 long_term_context=actor_context,
                 temperature=temperature,
                 prev_endings=prev_endings,
+                prev_images=prev_images,
+                used_openings=used_openings,
             )
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms

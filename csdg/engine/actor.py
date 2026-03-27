@@ -1,6 +1,6 @@
 """Actor モジュール -- Phase 1 (状態遷移) と Phase 2 (日記生成) を担当する。
 
-architecture.md SS3.1, SS3.2, SS6 に準拠し、LLMClient を介して LLM を呼び出す。
+architecture.md §3.1, §3.2, §6 に準拠し、LLMClient を介して LLM を呼び出す。
 プロンプトは prompts/ ディレクトリの外部 Markdown ファイルから読み込み、
 プレースホルダをテンプレート展開して使用する。
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from csdg.engine.prompt_loader import load_prompt
 from csdg.engine.state_transition import compute_next_state
@@ -58,7 +58,7 @@ class Actor:
         self,
         prev_state: CharacterState,
         event: DailyEvent,
-        long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
+        long_term_context: dict[str, object] | None = None,
     ) -> tuple[CharacterState, str]:
         """Phase 1: イベントに基づきキャラクターの内部状態を更新する。
 
@@ -139,9 +139,11 @@ class Actor:
         state: CharacterState,
         event: DailyEvent,
         revision_instruction: str | None = None,
-        long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
+        long_term_context: dict[str, object] | None = None,
         temperature: float | None = None,
         prev_endings: list[str] | None = None,
+        prev_images: list[str] | None = None,
+        used_openings: list[str] | None = None,
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -156,6 +158,8 @@ class Actor:
             long_term_context: 長期記憶コンテキスト(信念・テーマ・転換点)。None の場合は注入しない。
             temperature: 生成時の Temperature。None の場合は config のデフォルト値を使用。
             prev_endings: 直近の日記の余韻リスト。反復回避のためプロンプトに注入する。
+            prev_images: 過去の日記で使用されたシーン描写。反復回避のためプロンプトに注入する。
+            used_openings: 過去の日記で使用された書き出しパターン。反復回避のためプロンプトに注入する。
 
         Returns:
             生成されたブログ日記テキスト (Markdown)。
@@ -171,6 +175,8 @@ class Actor:
             revision_instruction,
             long_term_context,
             prev_endings,
+            prev_images,
+            used_openings,
         )
 
         logger.debug(
@@ -213,7 +219,7 @@ class Actor:
         self,
         prev_state: CharacterState,
         event: DailyEvent,
-        long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
+        long_term_context: dict[str, object] | None = None,
     ) -> str:
         """Phase 1 用の User Prompt を構築する。
 
@@ -247,8 +253,10 @@ class Actor:
         state: CharacterState,
         event: DailyEvent,
         revision: str | None,
-        long_term_context: dict[str, Any] | None = None,  # LongTermMemory の構造が可変のため Any を許容
+        long_term_context: dict[str, object] | None = None,
         prev_endings: list[str] | None = None,
+        prev_images: list[str] | None = None,
+        used_openings: list[str] | None = None,
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -261,6 +269,8 @@ class Actor:
             revision: Critic からの修正指示。None の場合は空文字列。
             long_term_context: 長期記憶コンテキスト。
             prev_endings: 直近の日記の余韻リスト。
+            prev_images: 過去の日記で使用されたシーン描写。
+            used_openings: 過去の日記で使用された書き出しパターン。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -280,12 +290,37 @@ class Actor:
         else:
             endings_section = ""
 
+        if prev_images:
+            images_text = "\n".join(f"- {img}" for img in prev_images)
+            images_section = (
+                "## 使用済みシーン描写\n"
+                "以下は過去の日記で使用された場面描写・イメージです。\n"
+                "**これらと同じ場面・同じ物・同じシチュエーションを再度使わないでください。**\n"
+                "別の場所、別の物、別の感覚で場面を構成してください。\n"
+                f"{images_text}"
+            )
+        else:
+            images_section = ""
+
+        if used_openings:
+            openings_text = "\n".join(f"- {o}" for o in used_openings)
+            openings_section = (
+                "## 使用済み書き出しパターン\n"
+                "以下は過去の日記で使った書き出しパターンです。\n"
+                "**同じパターンを3回以上使わないでください。**\n"
+                f"{openings_text}"
+            )
+        else:
+            openings_section = ""
+
         prompt = template.format(
             current_state=state.model_dump_json(indent=2),
             event=event.model_dump_json(indent=2),
             memory_buffer=memory,
             revision_instruction=revision_section,
             prev_endings=endings_section,
+            prev_images=images_section,
+            used_openings=openings_section,
         )
 
         if long_term_context:
@@ -294,25 +329,27 @@ class Actor:
         return prompt
 
     @staticmethod
-    # MemoryManager.get_context_for_actor() の戻り値型に依存
-    def _format_long_term_context(context: dict[str, Any]) -> str:
-        """長期記憶コンテキストをプロンプト用テキストに整形する。"""
+    def _format_long_term_context(context: dict[str, object]) -> str:
+        """長期記憶コンテキストをプロンプト用テキストに整形する。
+
+        Note:
+            引数の型は MemoryManager.get_context_for_actor() の戻り値型に依存する。
+        """
         sections: list[str] = ["\n\n---\n\n## 長期記憶 (これまでの蓄積)\n"]
 
-        beliefs: list[str] = context.get("beliefs", [])
+        beliefs = cast("list[str]", context.get("beliefs", []))
         if beliefs:
             sections.append("### とこみの信念")
             for b in beliefs:
                 sections.append(f"- {b}")
 
-        themes: list[str] = context.get("recurring_themes", [])
+        themes = cast("list[str]", context.get("recurring_themes", []))
         if themes:
             sections.append("\n### 繰り返し現れるテーマ")
             for t in themes:
                 sections.append(f"- {t}")
 
-        # MemoryManager.get_context_for_actor() の戻り値型に依存
-        turning_points: list[dict[str, Any]] = context.get("turning_points", [])
+        turning_points = cast("list[dict[str, object]]", context.get("turning_points", []))
         if turning_points:
             sections.append("\n### 転換点")
             for tp in turning_points:

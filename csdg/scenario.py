@@ -102,6 +102,4 @@ def validate_scenario(events: list[DailyEvent]) -> None:
         expected_day = i + 1
         if event.day != expected_day:
             raise ValueError(f"day が連番ではありません: 位置 {i} で day={event.day} (期待値: {expected_day})")
-
-        if not (-1.0 <= event.emotional_impact <= 1.0):
-            raise ValueError(f"emotional_impact が範囲外です: day={event.day}, value={event.emotional_impact}")
+        # emotional_impact の範囲チェックは DailyEvent.field_validator が実施済み

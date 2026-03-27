@@ -135,6 +135,12 @@ async def run_pipeline(args: argparse.Namespace) -> int:
 
     output_dir = args.output_dir or config.output_dir
 
+    # output_dir のパストラバーサル防御: ".." を含むパスを正規化し、
+    # 結果が存在しうる妥当なパスであることを確認する。
+    # Note: 現状 CSDG はローカル CLI ツールのため、厳密な制限は行わない。
+    # Web API 化する場合は許可ベースディレクトリのホワイトリスト制御が必要。
+    output_dir = str(Path(output_dir).resolve())
+
     # 2. プロンプトファイルの存在確認
     prompts_dir = Path("prompts")
     for filename in _REQUIRED_PROMPTS:

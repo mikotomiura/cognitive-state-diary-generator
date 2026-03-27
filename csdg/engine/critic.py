@@ -4,7 +4,7 @@
 評価パイプラインを実装する。各層は独立にスコアを算出し、
 重み付き加重平均で最終 CriticScore を生成する。
 
-architecture.md SS3.3 に準拠する。
+architecture.md §3.3 に準拠する。
 """
 
 from __future__ import annotations
@@ -353,6 +353,26 @@ class StatisticalChecker:
             if assertive_markers > 3:
                 penalties["persona_deviation"] += 1.0
                 details["excessive_assertions"] = assertive_markers
+
+            # 高インパクト日の文体特徴チェック (Prompt_Generator.md §emotional_impact)
+            # 短文連打・比喩崩壊・口語混入・哲学中断が必要
+            short_sentences = [s for s in sentences if 0 < len(s) <= 6]
+            has_short_burst = len(short_sentences) >= 3
+            colloquial_markers = ("ムカつく", "意味わからん", "普通に", "マジで", "嫌")
+            has_colloquial = any(m in diary_text for m in colloquial_markers)
+            interruption_markers = ("いや、", "——いや", "とか関係ない", "そんな話じゃない")
+            has_interruption = any(m in diary_text for m in interruption_markers)
+
+            high_impact_features = sum([has_short_burst, has_colloquial, has_interruption])
+            details["high_impact_features"] = high_impact_features
+            details["has_short_burst"] = has_short_burst
+            details["has_colloquial"] = has_colloquial
+            details["has_interruption"] = has_interruption
+
+            # 高インパクト日なのに文体が整然としすぎている場合は減点
+            if high_impact_features < 2:
+                penalties["persona_deviation"] += 1.0
+                details["insufficient_emotional_style"] = True
 
         return LayerScore(
             temporal_consistency=max(1.0, 5.0 - penalties["temporal_consistency"]),
@@ -785,4 +805,3 @@ class Critic:
             event,
             prev_diary=prev_diary,
         )
-

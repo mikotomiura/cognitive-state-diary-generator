@@ -15,18 +15,18 @@ from pydantic_settings import BaseSettings
 class VetoCaps(BaseModel):
     """Veto 権発動時のスコア上限キャップ設定。"""
 
-    persona: float = 2.0
-    temporal: float = 2.0
-    emotional: float = 2.0
-    all_axes: float = 2.0
+    persona: float = Field(default=2.0, description="ペルソナ軸の veto 上限キャップ")
+    temporal: float = Field(default=2.0, description="時間的整合性軸の veto 上限キャップ")
+    emotional: float = Field(default=2.0, description="感情的妥当性軸の veto 上限キャップ")
+    all_axes: float = Field(default=2.0, description="全軸共通の veto 上限キャップ")
 
 
 class CriticWeights(BaseModel):
     """Critic 3層分解の重み設定。"""
 
-    rule_based: float = 0.3
-    statistical: float = 0.2
-    llm_judge: float = 0.5
+    rule_based: float = Field(default=0.3, description="Layer 1 (RuleBased) の重み")
+    statistical: float = Field(default=0.2, description="Layer 2 (Statistical) の重み")
+    llm_judge: float = Field(default=0.5, description="Layer 3 (LLMJudge) の重み")
 
 
 class StateTransitionConfig(BaseModel):
@@ -35,13 +35,13 @@ class StateTransitionConfig(BaseModel):
     決定論的骨格 + LLM delta 補正 + 微小ノイズの重みを制御する。
     """
 
-    decay_rate: float = 0.1
-    event_weight: float = 0.6
-    llm_weight: float = 0.3
-    noise_scale: float = 0.05
-    clamp_min: float = -1.0
-    clamp_max: float = 1.0
-    max_llm_delta: float = 0.3
+    decay_rate: float = Field(default=0.1, description="前日値の減衰率")
+    event_weight: float = Field(default=0.6, description="イベントインパクトの重み")
+    llm_weight: float = Field(default=0.3, description="LLM delta 補正の重み")
+    noise_scale: float = Field(default=0.05, description="微小ノイズの標準偏差")
+    clamp_min: float = Field(default=-1.0, description="クランプ下限値")
+    clamp_max: float = Field(default=1.0, description="クランプ上限値")
+    max_llm_delta: float = Field(default=0.3, description="LLM delta の最大絶対値")
 
 
 class CSDGConfig(BaseSettings):

@@ -65,6 +65,11 @@ class CriticLog:
     def save(self, path: Path) -> None:
         """JSON Lines 形式で追記保存する.
 
+        Note:
+            追記モード (``"a"``) で開くため、同一ファイルに複数回呼び出すと
+            エントリが累積する。実行ごとにファイルをリセットしたい場合は
+            呼び出し前にファイルを削除すること。
+
         Args:
             path: 保存先ファイルパス (.jsonl).
         """

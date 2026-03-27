@@ -45,14 +45,19 @@ def generate_state_trajectory(
         output_path: 出力ファイルパス。
     """
     # フォント設定
+    font_found = False
     for font in _JP_FONTS:
-        if font != "sans-serif":
-            try:
-                matplotlib.font_manager.findfont(font, fallback_to_default=False)
-                matplotlib.rcParams["font.family"] = font
-                break
-            except ValueError:
-                continue
+        if font == "sans-serif":
+            break
+        try:
+            matplotlib.font_manager.findfont(font, fallback_to_default=False)
+            matplotlib.rcParams["font.family"] = font
+            font_found = True
+            break
+        except ValueError:
+            continue
+    if not font_found:
+        logger.warning("[CSDG] 日本語フォントが見つかりません。グラフのラベルが文字化けする可能性があります。")
 
     records = sorted(log.records, key=lambda r: r.day)
     days = [r.day for r in records]
@@ -66,10 +71,10 @@ def generate_state_trajectory(
     motivation_vals = [r.final_state.motivation for r in records]
     fatigue_vals = [r.final_state.fatigue for r in records]
 
-    # CriticScore (最後の attempt)
-    temporal_vals = [r.critic_scores[-1].temporal_consistency for r in records]
-    emotional_vals = [r.critic_scores[-1].emotional_plausibility for r in records]
-    persona_vals = [r.critic_scores[-1].persona_deviation for r in records]
+    # CriticScore (最後の attempt、空リストの場合は 0 でフォールバック)
+    temporal_vals = [r.critic_scores[-1].temporal_consistency if r.critic_scores else 0 for r in records]
+    emotional_vals = [r.critic_scores[-1].emotional_plausibility if r.critic_scores else 0 for r in records]
+    persona_vals = [r.critic_scores[-1].persona_deviation if r.critic_scores else 0 for r in records]
 
     # イベントタイプのマーカー色
     marker_colors = [_EVENT_MARKER_COLORS.get(r.event.event_type, "#7f7f7f") for r in records]

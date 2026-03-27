@@ -41,6 +41,14 @@ class MemoryManager:
         prompts_dir: Path | None = None,
         temperature_final: float = 0.3,
     ) -> None:
+        """MemoryManager を初期化する.
+
+        Args:
+            window_size: 短期記憶のウィンドウサイズ.
+            memory: 初期メモリ状態. None の場合はデフォルトで生成.
+            prompts_dir: プロンプトファイルのディレクトリパス.
+            temperature_final: メモリ抽出 LLM 呼び出し時の Temperature.
+        """
         self._window_size = window_size
         self._memory = memory or Memory(
             short_term=ShortTermMemory(window_size=window_size),
@@ -118,7 +126,8 @@ class MemoryManager:
 
         1. short_term に追加 (ウィンドウ超過分を evict)
         2. evict されたエントリから重要な信念・テーマを抽出して long_term に蓄積
-        3. long_term の beliefs が多すぎる場合は古いものを統合・削除
+        3. 当日の日記全文に対しても転換点キーワード検索を行う
+        4. long_term の beliefs が多すぎる場合は古いものを統合・削除
 
         Args:
             diary_text: 当日の日記テキスト.
@@ -129,6 +138,11 @@ class MemoryManager:
 
         if evicted:
             await self._extract_to_long_term(evicted, day, llm_client)
+
+        # 転換点キーワード検索は切り詰め前の原文に対しても行う
+        # (短期記憶の summary は 100 文字に切り詰められるため、
+        #  後半に現れるキーワードを見逃す問題を防ぐ)
+        self._detect_turning_point_from_full_text(diary_text, day)
 
         self._compact_long_term()
 
@@ -278,6 +292,28 @@ class MemoryManager:
                 update={
                     "long_term": lt.model_copy(
                         update={"beliefs": beliefs, "recurring_themes": themes},
+                    ),
+                },
+            )
+
+    def _detect_turning_point_from_full_text(self, diary_text: str, day: int) -> None:
+        """日記全文からキーワードベースで転換点を検出する.
+
+        短期記憶の summary は _SUMMARY_LENGTH で切り詰められるため、
+        キーワードが後半に出現する場合に見逃す問題がある。
+        この関数は切り詰め前の原文に対して検索を行い、補完する。
+        """
+        tp_keywords = ("転機", "変化", "気づ", "決意", "覚悟")
+        if any(kw in diary_text for kw in tp_keywords) and not self._has_duplicate_turning_point(day):
+            tp = TurningPoint(
+                day=day,
+                summary=diary_text[:_SUMMARY_LENGTH],
+            )
+            new_tps = [*self._memory.long_term.turning_points, tp]
+            self._memory = self._memory.model_copy(
+                update={
+                    "long_term": self._memory.long_term.model_copy(
+                        update={"turning_points": new_tps},
                     ),
                 },
             )
