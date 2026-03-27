@@ -10,7 +10,7 @@ import math
 
 import pytest
 
-from csdg.config import CSDGConfig
+from csdg.config import CriticWeights, CSDGConfig, StateTransitionConfig, VetoCaps
 
 
 @pytest.fixture()
@@ -180,8 +180,6 @@ class TestEnvironmentVariables:
 # ====================================================================
 # 派生プロパティのテスト (#15)
 # ====================================================================
-
-from csdg.config import CriticWeights, VetoCaps, StateTransitionConfig
 
 
 class TestCriticWeightsProperty:

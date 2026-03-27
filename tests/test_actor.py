@@ -29,10 +29,7 @@ def prompts_dir(tmp_path: Path) -> Path:
 
     state_update = tmp_path / "Prompt_StateUpdate.md"
     state_update.write_text(
-        "Update state.\n"
-        "previous_state: {previous_state}\n"
-        "event: {event}\n"
-        "memory: {memory_buffer}",
+        "Update state.\nprevious_state: {previous_state}\nevent: {event}\nmemory: {memory_buffer}",
         encoding="utf-8",
     )
 
@@ -374,8 +371,20 @@ class TestPrevEndings:
 
         from csdg.schemas import DailyEvent
 
-        event = DailyEvent(day=2, event_type="neutral", domain="仕事", description="テストイベントの説明文です", emotional_impact=0.2)
-        state = CharacterState(fatigue=0.1, motivation=0.2, stress=-0.1, current_focus="x", growth_theme="x")
+        event = DailyEvent(
+            day=2,
+            event_type="neutral",
+            domain="仕事",
+            description="テストイベントの説明文です",
+            emotional_impact=0.2,
+        )
+        state = CharacterState(
+            fatigue=0.1,
+            motivation=0.2,
+            stress=-0.1,
+            current_focus="x",
+            growth_theme="x",
+        )
 
         await actor.generate_diary(state, event, prev_endings=["余韻A......。", "余韻B......。"])
 
@@ -396,8 +405,20 @@ class TestPrevEndings:
 
         from csdg.schemas import DailyEvent
 
-        event = DailyEvent(day=1, event_type="neutral", domain="仕事", description="テストイベントの説明文です", emotional_impact=0.2)
-        state = CharacterState(fatigue=0.1, motivation=0.2, stress=-0.1, current_focus="x", growth_theme="x")
+        event = DailyEvent(
+            day=1,
+            event_type="neutral",
+            domain="仕事",
+            description="テストイベントの説明文です",
+            emotional_impact=0.2,
+        )
+        state = CharacterState(
+            fatigue=0.1,
+            motivation=0.2,
+            stress=-0.1,
+            current_focus="x",
+            growth_theme="x",
+        )
 
         await actor.generate_diary(state, event, prev_endings=None)
 

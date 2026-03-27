@@ -7,7 +7,6 @@ StatisticalChecker, LLMJudge, CriticPipeline) のテストを含む。
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
@@ -216,7 +215,11 @@ class TestRuleBasedValidator:
         """品質の良い日記で高スコア."""
         good_diary = "あ" * 1000  # 適切な長さ、禁止表現なし
         result = self.validator.evaluate(
-            good_diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            good_diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert result.persona_deviation >= 4.0
         assert result.temporal_consistency >= 4.0
@@ -225,7 +228,11 @@ class TestRuleBasedValidator:
         """短すぎる日記で persona_deviation が減点される."""
         short_diary = "短い日記。"
         result = self.validator.evaluate(
-            short_diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            short_diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert result.persona_deviation < 4.0
         assert result.details.get("char_count_violation") == "too_short"
@@ -234,7 +241,11 @@ class TestRuleBasedValidator:
         """絵文字を含む日記で persona_deviation が大幅減点される."""
         emoji_diary = "あ" * 1000 + "\U0001f600\U0001f600"
         result = self.validator.evaluate(
-            emoji_diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            emoji_diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert result.persona_deviation < 4.0
         assert result.details.get("emoji_count", 0) > 0
@@ -244,7 +255,11 @@ class TestRuleBasedValidator:
         diary = "あいうえおかきくけこ" * 100
         prev_diary = "あいうえおかきくけこ" * 100  # 完全一致
         result = self.validator.evaluate(
-            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
             prev_diary=prev_diary,
         )
         assert result.temporal_consistency < 4.0
@@ -254,7 +269,11 @@ class TestRuleBasedValidator:
         """前日の日記がない場合は重複チェックをスキップ."""
         diary = "あ" * 1000
         result = self.validator.evaluate(
-            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert "trigram_overlap" not in result.details
 
@@ -268,7 +287,11 @@ class TestRuleBasedValidator:
         diary = "あ" * 1000
 
         result = self.validator.evaluate(
-            diary, self.prev_state, mismatched_state, high_event, expected,
+            diary,
+            self.prev_state,
+            mismatched_state,
+            high_event,
+            expected,
         )
         assert result.emotional_plausibility < 5.0
 
@@ -293,8 +316,12 @@ class TestStatisticalChecker:
         """通常の日記で高スコア."""
         diary = "今日は普通の一日だった。朝起きて仕事に行った。特に何も起きなかった。"
         result = self.checker.evaluate(
-            diary, self.prev_state, self.curr_state, self.event,
-            self.expected_delta, self.small_deviation,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
+            self.small_deviation,
         )
         assert result.emotional_plausibility >= 4.0
 
@@ -303,8 +330,12 @@ class TestStatisticalChecker:
         diary = "今日は普通の一日だった。朝起きて仕事に行った。特に何も起きなかった。"
         large_deviation = {"stress": 0.8, "motivation": -0.9, "fatigue": 0.7}
         result = self.checker.evaluate(
-            diary, self.prev_state, self.curr_state, self.event,
-            self.expected_delta, large_deviation,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
+            large_deviation,
         )
         assert result.emotional_plausibility < 5.0
 
@@ -312,8 +343,12 @@ class TestStatisticalChecker:
         """統計情報が details に含まれる."""
         diary = "今日は普通の一日だった。朝起きて仕事に行った。"
         result = self.checker.evaluate(
-            diary, self.prev_state, self.curr_state, self.event,
-            self.expected_delta, self.small_deviation,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
+            self.small_deviation,
         )
         assert "avg_sentence_length" in result.details
         assert "sentence_count" in result.details
@@ -326,8 +361,12 @@ class TestStatisticalChecker:
         event = _make_event(impact=-0.9)
         diary = "これはだ。これはだ。これはだ。これはだ。これはである。" * 5
         result = self.checker.evaluate(
-            diary, self.prev_state, self.curr_state, event,
-            self.expected_delta, self.small_deviation,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            event,
+            self.expected_delta,
+            self.small_deviation,
         )
         assert result.details.get("excessive_assertions", 0) > 0
 
@@ -453,7 +492,11 @@ class TestCriticEvaluateFullPrevDiary:
         prev_diary = "あいうえおかきくけこ" * 100  # 完全一致
 
         result = await critic.evaluate_full(
-            initial_state, curr_state, diary, sample_event, prev_diary=prev_diary,
+            initial_state,
+            curr_state,
+            diary,
+            sample_event,
+            prev_diary=prev_diary,
         )
 
         # trigram overlap が計算されている
@@ -480,7 +523,10 @@ class TestCriticEvaluateFullPrevDiary:
 
         diary = "あ" * 1000
         result = await critic.evaluate_full(
-            initial_state, curr_state, diary, sample_event,
+            initial_state,
+            curr_state,
+            diary,
+            sample_event,
         )
 
         assert "trigram_overlap" not in result.rule_based.details
@@ -587,7 +633,11 @@ class TestRuleBasedValidatorForbiddenPronouns:
         """禁止一人称「僕」を含む日記で検出される."""
         diary = "あ" * 500 + "僕は今日も頑張った" + "あ" * 500
         result = self.validator.evaluate(
-            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert result.details.get("forbidden_pronoun_found") is True
         assert "僕" in result.details.get("forbidden_pronouns", [])
@@ -596,7 +646,11 @@ class TestRuleBasedValidatorForbiddenPronouns:
         """許可された一人称「わたし」は検出されない."""
         diary = "あ" * 500 + "わたしは今日も頑張った" + "あ" * 500
         result = self.validator.evaluate(
-            diary, self.prev_state, self.curr_state, self.event, self.expected_delta,
+            diary,
+            self.prev_state,
+            self.curr_state,
+            self.event,
+            self.expected_delta,
         )
         assert result.details.get("forbidden_pronoun_found") is None
 
@@ -730,7 +784,10 @@ class TestCriticPipeline:
 
         pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
         result = await pipeline.evaluate(
-            _make_state(), _make_state(), "あ" * 1000, _make_event(),
+            _make_state(),
+            _make_state(),
+            "あ" * 1000,
+            _make_event(),
         )
 
         assert result.weights["rule_based"] == pytest.approx(0.3)
@@ -807,7 +864,10 @@ class TestCriticPipeline:
 
         pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
         result = await pipeline.evaluate(
-            _make_state(), _make_state(), "あ" * 1000, _make_event(),
+            _make_state(),
+            _make_state(),
+            "あ" * 1000,
+            _make_event(),
         )
 
         assert result.inverse_estimation_score is not None
@@ -854,7 +914,8 @@ class TestHasCriticalFailure:
         """forbidden_pronoun_found が True → persona 軸に veto。"""
         validator = RuleBasedValidator()
         result = LayerScore(
-            temporal_consistency=5.0, emotional_plausibility=5.0,
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
             persona_deviation=5.0,
             details={"forbidden_pronoun_found": True, "char_count": 1000},
         )
@@ -867,7 +928,8 @@ class TestHasCriticalFailure:
         """文字数が mid * 0.5 以下 → 全軸に veto。"""
         validator = RuleBasedValidator()
         result = LayerScore(
-            temporal_consistency=5.0, emotional_plausibility=5.0,
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
             persona_deviation=5.0,
             details={"char_count": 100},
         )
@@ -880,7 +942,8 @@ class TestHasCriticalFailure:
         """trigram_overlap > 0.50 → temporal 軸に veto。"""
         validator = RuleBasedValidator()
         result = LayerScore(
-            temporal_consistency=5.0, emotional_plausibility=5.0,
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
             persona_deviation=5.0,
             details={"char_count": 1000, "trigram_overlap": 0.55},
         )
@@ -892,7 +955,8 @@ class TestHasCriticalFailure:
         """正常な結果 → veto なし。"""
         validator = RuleBasedValidator()
         result = LayerScore(
-            temporal_consistency=5.0, emotional_plausibility=5.0,
+            temporal_consistency=5.0,
+            emotional_plausibility=5.0,
             persona_deviation=5.0,
             details={"char_count": 1000, "trigram_overlap": 0.1},
         )
@@ -910,6 +974,7 @@ class TestComputeInverseEstimation:
 
     def setup_method(self) -> None:
         from csdg.engine.critic import LLMJudge
+
         self.judge = LLMJudge.__new__(LLMJudge)  # __init__ をバイパス
 
     def test_empty_deviation_returns_5(self) -> None:

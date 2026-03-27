@@ -11,7 +11,6 @@ from csdg.config import StateTransitionConfig
 from csdg.engine.state_transition import compute_event_impact, compute_next_state
 from csdg.schemas import CharacterState, DailyEvent, EmotionalDelta
 
-
 # ====================================================================
 # フィクスチャ
 # ====================================================================
@@ -147,7 +146,7 @@ class TestComputeNextState:
         small_result = compute_next_state(base_state, small_event, zero_delta, config, sensitivity, seed=42)
         large_result = compute_next_state(base_state, large_event, zero_delta, config, sensitivity, seed=42)
 
-        # stress の変化量を比較（large event の方が変化が大きい）
+        # stress の変化量を比較 (large event の方が変化が大きい)
         small_stress_delta = abs(small_result.stress - base_state.stress)
         large_stress_delta = abs(large_result.stress - base_state.stress)
         assert large_stress_delta > small_stress_delta
@@ -214,7 +213,7 @@ class TestComputeNextState:
 
         result = compute_next_state(base_state, neutral_event, zero_delta, config, sensitivity, seed=42)
 
-        # 遷移は起きている（prev_state と完全一致ではない）
+        # 遷移は起きている (prev_state と完全一致ではない)
         assert result.stress != base_state.stress or result.motivation != base_state.motivation
 
     def test_reproducibility_with_zero_noise(
@@ -223,7 +222,7 @@ class TestComputeNextState:
         sensitivity: dict[str, float],
         neutral_event: DailyEvent,
     ) -> None:
-        """noise_scale=0 の場合に同一入力で完全一致する（再現性テスト）。"""
+        """noise_scale=0 の場合に同一入力で完全一致する (再現性テスト)。"""
         config_no_noise = StateTransitionConfig(noise_scale=0.0)
         delta = EmotionalDelta(fatigue=0.1, motivation=-0.05, stress=0.2)
 
@@ -241,7 +240,7 @@ class TestComputeNextState:
         sensitivity: dict[str, float],
         neutral_event: DailyEvent,
     ) -> None:
-        """同一 seed で同一結果になる（ノイズありでも再現可能）。"""
+        """同一 seed で同一結果になる (ノイズありでも再現可能)。"""
         # config has default noise_scale=0, use one with noise
         noisy_config = StateTransitionConfig(noise_scale=0.05)
         delta = EmotionalDelta(fatigue=0.1, motivation=-0.05, stress=0.2)

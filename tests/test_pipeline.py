@@ -9,16 +9,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from pydantic import ValidationError
-
 import httpx
+import pytest
 from anthropic._exceptions import OverloadedError
+from pydantic import ValidationError
 
 from csdg.config import CSDGConfig
 from csdg.engine.actor import Actor
 from csdg.engine.critic import Critic, judge
-from csdg.engine.pipeline import PipelineRunner, RetryCandidate, _extract_ending
+from csdg.engine.pipeline import (
+    PipelineRunner,
+    RetryCandidate,
+    _detect_opening_pattern,
+    _extract_ending,
+    _extract_key_images,
+    _sanitize_revision,
+)
 from csdg.schemas import CharacterState, CriticResult, CriticScore, DailyEvent, LayerScore
 
 if TYPE_CHECKING:
@@ -230,7 +236,11 @@ class TestTemperatureDecay:
         reject1 = _make_reject_score(temporal=2)
         reject2 = _make_reject_score(temporal=2, emotional=3)
         reject3 = _make_reject_score(temporal=2, emotional=2)
-        mock_critic.evaluate_full.side_effect = [_wrap_as_result(reject1), _wrap_as_result(reject2), _wrap_as_result(reject3)]
+        mock_critic.evaluate_full.side_effect = [
+            _wrap_as_result(reject1),
+            _wrap_as_result(reject2),
+            _wrap_as_result(reject3),
+        ]
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -276,7 +286,11 @@ class TestBestOfN:
         reject1 = _make_reject_score(temporal=2, emotional=2, persona=4)  # 8
         reject2 = _make_reject_score(temporal=2, emotional=4, persona=4)  # 10
         reject3 = _make_reject_score(temporal=2, emotional=3, persona=4)  # 9
-        mock_critic.evaluate_full.side_effect = [_wrap_as_result(reject1), _wrap_as_result(reject2), _wrap_as_result(reject3)]
+        mock_critic.evaluate_full.side_effect = [
+            _wrap_as_result(reject1),
+            _wrap_as_result(reject2),
+            _wrap_as_result(reject3),
+        ]
 
         event = _make_event(1)
         record = await runner.run_single_day(event, state, day=1)
@@ -532,7 +546,7 @@ class TestPromptHashes:
         assert len(hashes) == 2
         assert "System_Persona.md" in hashes
         assert "Prompt_Generator.md" in hashes
-        for name, h in hashes.items():
+        for _name, h in hashes.items():
             assert len(h) == 64  # SHA-256 hex length
             assert all(c in "0123456789abcdef" for c in h)
 
@@ -660,6 +674,7 @@ class TestIntegrationGapFixes:
     ) -> None:
         """PipelineRunner.critic_log プロパティが CriticLog を返す。"""
         from csdg.engine.critic_log import CriticLog
+
         assert isinstance(runner.critic_log, CriticLog)
 
 
@@ -714,7 +729,7 @@ class TestOverloadedRetry:
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = [_make_event(1)]
-        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock):
             log = await runner.run(events, state)
 
         # Day 1 が成功している
@@ -753,10 +768,10 @@ class TestOverloadedRetry:
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(3)
-        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock):
             log = await runner.run(events, state)
 
-        # 全3Day 成功（OverloadedError は回復したので連続失敗にならない）
+        # 全3Day 成功 (OverloadedError は回復したので連続失敗にならない)
         assert len(log.records) == 3
 
     @pytest.mark.asyncio()
@@ -787,7 +802,7 @@ class TestOverloadedRetry:
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(4)
-        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("csdg.engine.pipeline.asyncio.sleep", new_callable=AsyncMock):
             log = await runner.run(events, state)
 
         # Day 2 はスキップされ、Day 1, 3, 4 が成功
@@ -857,6 +872,53 @@ class TestExtractEnding:
 
 
 # ====================================================================
+# _sanitize_revision: 修正指示のサニタイズ
+# ====================================================================
+
+
+class TestSanitizeRevision:
+    """_sanitize_revision のテスト。"""
+
+    def test_none_returns_none(self) -> None:
+        """None 入力は None を返す。"""
+        assert _sanitize_revision(None) is None
+
+    def test_wraps_in_revision_tags(self) -> None:
+        """非 None 入力は <revision> タグで囲まれる。"""
+        result = _sanitize_revision("修正してください")
+        assert result is not None
+        assert result.startswith("<revision>")
+        assert result.endswith("</revision>")
+        assert "修正してください" in result
+
+    def test_truncates_at_limit(self) -> None:
+        """500文字を超える入力は切り詰められる。"""
+        long_text = "あ" * 600
+        result = _sanitize_revision(long_text)
+        assert result is not None
+        # タグ部分を除いた中身が500文字以下
+        inner = result.replace("<revision>\n", "").replace("\n</revision>", "")
+        assert len(inner) <= 500
+
+    def test_control_characters_removed(self) -> None:
+        """制御文字 (改行・タブ以外) が除去される。"""
+        text_with_ctrl = "修正\x00して\x01ください"
+        result = _sanitize_revision(text_with_ctrl)
+        assert result is not None
+        assert "\x00" not in result
+        assert "\x01" not in result
+        assert "修正してください" in result
+
+    def test_newlines_and_tabs_preserved(self) -> None:
+        """改行とタブは除去されない。"""
+        text = "行1\n行2\t値"
+        result = _sanitize_revision(text)
+        assert result is not None
+        assert "\n行2" in result
+        assert "\t値" in result
+
+
+# ====================================================================
 # prev_endings の蓄積と受け渡し
 # ====================================================================
 
@@ -908,7 +970,8 @@ class TestPrevEndingsTracking:
         call_count = 0
 
         async def generate_with_unique_ending(
-            *args: object, **kwargs: object,
+            *args: object,
+            **kwargs: object,
         ) -> str:
             nonlocal call_count
             call_count += 1
@@ -927,3 +990,83 @@ class TestPrevEndingsTracking:
         assert "余韻2" in prev_endings[0]
         assert "余韻3" in prev_endings[1]
         assert "余韻4" in prev_endings[2]
+
+
+# ====================================================================
+# _extract_key_images: シーン描写の抽出
+# ====================================================================
+
+
+class TestExtractKeyImages:
+    """_extract_key_images のテスト。"""
+
+    def test_extracts_scene_markers(self) -> None:
+        """シーンマーカーを含む文が抽出される。"""
+        text = "帰り道、古書店に立ち寄った。店主が手書きでポップを書いている。"
+        images = _extract_key_images(text)
+        assert len(images) >= 1
+        assert any("古書店" in img for img in images)
+
+    def test_deduplicates_same_marker(self) -> None:
+        """同一マーカーが複数文に現れても1回のみ抽出される。"""
+        # 「窓」マーカーが2文に現れるが、1回目のみ抽出
+        text = "窓の外を見た。もう一度窓に目を向けた。"
+        images = _extract_key_images(text)
+        window_imgs = [img for img in images if "窓" in img]
+        assert len(window_imgs) == 1
+
+    def test_max_images_limit(self) -> None:
+        """最大件数で制限される。"""
+        text = (
+            "古書店に行った。電車に乗った。コンビニで買った。"
+            "会議室で話した。窓の外を見た。カフェに入った。"
+            "蛍光灯が光る。ノートを開いた。"
+        )
+        images = _extract_key_images(text, max_images=3)
+        assert len(images) <= 3
+
+    def test_empty_text_returns_empty(self) -> None:
+        """空テキストで空リスト。"""
+        assert _extract_key_images("") == []
+
+    def test_no_markers_returns_empty(self) -> None:
+        """マーカーを含まないテキストで空リスト。"""
+        assert _extract_key_images("今日は良い天気だった。哲学について考えた。") == []
+
+
+# ====================================================================
+# _detect_opening_pattern: 書き出しパターンの分類
+# ====================================================================
+
+
+class TestDetectOpeningPattern:
+    """_detect_opening_pattern のテスト。"""
+
+    def test_metaphor_pattern(self) -> None:
+        """比喩型の検出。"""
+        assert _detect_opening_pattern("今日は、まるでカフカの変身のような一日だった。") == "比喩型"
+
+    def test_dialogue_pattern(self) -> None:
+        """会話型の検出。"""
+        assert _detect_opening_pattern("\u300cで、それ実装できるの\uff1f\u300d\u2014\u2014那由他さんの声が") == "会話型"
+
+    def test_sensory_pattern(self) -> None:
+        """五感型の検出。"""
+        assert _detect_opening_pattern("図書館のインクの匂いが、鼻の奥にまだ残っている。") == "五感型"
+
+    def test_recall_pattern(self) -> None:
+        """回想型の検出。"""
+        assert _detect_opening_pattern("大学院の研究室には、いつも珈琲の香りが漂っていた。") == "回想型"
+
+    def test_fragment_pattern(self) -> None:
+        """断片型の検出 (短い冒頭)。"""
+        assert _detect_opening_pattern("会議。沈黙。憂鬱。") == "断片型"
+
+    def test_empty_text(self) -> None:
+        """空テキストでその他。"""
+        assert _detect_opening_pattern("") == "その他"
+
+    def test_question_pattern(self) -> None:
+        """問い型の検出。"""
+        result = _detect_opening_pattern("効率って、いつから美徳になったんだろうか")
+        assert result == "問い型"

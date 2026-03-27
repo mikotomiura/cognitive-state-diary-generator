@@ -6,7 +6,7 @@ test-standards/SKILL.md の AAA パターンおよび命名規約に従う。
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -24,6 +24,7 @@ from csdg.schemas import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_event(**overrides: object) -> DailyEvent:
     """テスト用 DailyEvent を作成するヘルパー。"""
@@ -364,7 +365,7 @@ class TestRoundtripSerialization:
             deviation={"stress": 0.05},
         )
         original = PipelineLog(
-            executed_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 3, 25, tzinfo=UTC),
             config_summary={"model": "gpt-4o", "temperature": 0.7},
             prompt_hashes={"System_Persona": "abc123"},
             records=[record],

@@ -13,7 +13,6 @@ import pytest
 from csdg.engine.memory import MemoryManager
 from csdg.schemas import LongTermMemory, Memory, MemoryExtraction, ShortTermMemory, TurningPoint
 
-
 # ====================================================================
 # フィクスチャ
 # ====================================================================
@@ -278,7 +277,8 @@ class TestLLMExtraction:
         mock_client = AsyncMock()
 
         await manager._llm_extract_beliefs_and_themes(
-            ["[Day 1] entry..."], mock_client,
+            ["[Day 1] entry..."],
+            mock_client,
         )
 
         # LLM は呼ばれない
@@ -302,7 +302,8 @@ class TestLLMExtraction:
         )
 
         await manager._llm_extract_beliefs_and_themes(
-            ["[Day 1] evicted entry..."], mock_client,
+            ["[Day 1] evicted entry..."],
+            mock_client,
         )
 
         assert "効率は善ではない" in manager.memory.long_term.beliefs
@@ -330,7 +331,8 @@ class TestLLMExtraction:
         )
 
         await manager._llm_extract_beliefs_and_themes(
-            ["[Day 1] entry..."], mock_client,
+            ["[Day 1] entry..."],
+            mock_client,
         )
 
         assert manager.memory.long_term.beliefs.count("既存の信念") == 1
@@ -349,7 +351,8 @@ class TestLLMExtraction:
         )
 
         await manager._llm_extract_beliefs_and_themes(
-            ["[Day 1] evicted entry..."], mock_client,
+            ["[Day 1] evicted entry..."],
+            mock_client,
         )
 
         assert "テスト信念" in manager.memory.long_term.beliefs
@@ -370,7 +373,8 @@ class TestLLMExtraction:
 
         # 例外が伝播しないことを確認
         await manager._llm_extract_beliefs_and_themes(
-            ["[Day 1] entry..."], mock_client,
+            ["[Day 1] entry..."],
+            mock_client,
         )
 
         # beliefs は変化しない
