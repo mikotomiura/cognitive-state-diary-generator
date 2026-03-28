@@ -66,10 +66,11 @@ config.py                        └─ engine/critic.py           state_traject
   EMOTION_SENSITIVITY
                                 prompts/
 prompts/                          System_Persona.md
-  *.md (4ファイル)                Prompt_StateUpdate.md
+  *.md (6ファイル)                Prompt_StateUpdate.md
                                   Prompt_Generator.md
 schemas.py                       Prompt_Critic.md
-  Pydantic Models
+  Pydantic Models                 Prompt_MemoryExtract.md
+                                  System_MemoryManager.md
 ```
 
 ---
@@ -352,6 +353,7 @@ CriticPipeline:
     - 文体統計: 平均文長、句読点頻度、疑問文比率
     - deviation 分析 (期待変動との乖離が大きい場合に減点)
     - 断定文比率 (高インパクト時の過度な断定を検出)
+    - 高インパクト日文体検証 (短文連打・口語混入・哲学中断の検出)
 
   Layer 3: LLMJudge (定性評価)
     - 従来の Prompt_Critic.md による LLM 評価
@@ -680,6 +682,10 @@ class PipelineLog(BaseModel):
          + "## 今日のイベント" + x_t.model_dump_json()
          + "## エピソード記憶" + memory_buffer の内容
          + (リトライ時) "## 修正指示" + revision_instruction
+         + "## 使用済み余韻" + prev_endings (直近3日の末尾段落)
+         + "## 使用済みシーン描写" + prev_images (場所・物のキーフレーズ)
+         + "## 使用済み書き出しパターン" + used_openings (6パターン分類)
+         + (長期記憶あり) "## 長期記憶" + beliefs/themes/turning_points
 ```
 
 **Phase 3 (Critic Evaluation):**

@@ -48,7 +48,9 @@ cognitive-State-Diary-generator/
 │   ├── System_Persona.md             #   キャラクターの不変ルール (意味記憶)
 │   ├── Prompt_StateUpdate.md         #   Phase 1: 状態遷移ルール
 │   ├── Prompt_Generator.md           #   Phase 2: 日記生成ルール
-│   └── Prompt_Critic.md              #   Phase 3: 評価基準・採点基準
+│   ├── Prompt_Critic.md              #   Phase 3: 評価基準・採点基準
+│   ├── Prompt_MemoryExtract.md      #   長期記憶の信念・テーマ抽出
+│   └── System_MemoryManager.md      #   メモリ管理システムプロンプト
 │
 ├── tests/                             # テストコード
 │   ├── __init__.py
@@ -63,11 +65,7 @@ cognitive-State-Diary-generator/
 │   ├── test_state_transition.py     #   状態遷移の半数式化テスト (max_llm_delta含む)
 │   ├── test_memory.py               #   2層メモリ構造テスト
 │   ├── test_critic_log.py           #   Criticログ蓄積テスト
-│   └── fixtures/                      #   テスト用固定データ
-│       ├── sample_state.json          #     サンプル CharacterState
-│       ├── sample_event.json          #     サンプル DailyEvent
-│       ├── sample_critic_score.json   #     サンプル CriticScore
-│       └── sample_diary.md            #     サンプル日記テキスト
+│   └── test_main.py                 #   CLIエントリポイントのテスト
 │
 ├── output/                            # パイプライン出力 (Git管理外)
 │   ├── day_01.md 〜 day_07.md         #   生成された日記ファイル
@@ -315,9 +313,10 @@ main.py
 |---|---|---|---|
 | `System_Persona.md` | キャラクターの不変ルール。全PhaseのSystemプロンプトとして使用 | 全Phase | なし（静的） |
 | `Prompt_StateUpdate.md` | 感情推移の計算ルール | Phase 1 | `{previous_state}`, `{event}`, `{memory_buffer}` |
-| `Prompt_Generator.md` | ブログ記事の構成・感情の言語化ルール | Phase 2 | `{current_state}`, `{event}`, `{memory_buffer}`, `{revision_instruction}` |
+| `Prompt_Generator.md` | ブログ記事の構成・感情の言語化ルール | Phase 2 | `{current_state}`, `{event}`, `{memory_buffer}`, `{revision_instruction}`, `{prev_endings}`, `{prev_images}`, `{used_openings}` |
 | `Prompt_Critic.md` | 評価基準・採点基準（1-5スコアの定義） | Phase 3 | `{diary_text}`, `{current_state}`, `{event}`, `{expected_delta}`, `{deviation}` |
 | `Prompt_MemoryExtract.md` | 長期記憶の信念・テーマ抽出 | メモリ更新時 | `{evicted_entries}`, `{current_beliefs}`, `{current_themes}` |
+| `System_MemoryManager.md` | メモリ管理システムプロンプト | メモリ更新時 | なし（静的） |
 
 ### 5.3 プロンプト変更時の確認事項
 
@@ -335,7 +334,7 @@ main.py
 - テストファイル名は `test_` プレフィックスを付ける（pytest の自動検出対応）
 - テストファイルと被テストモジュールは1対1で対応させる
 - 共通フィクスチャは `conftest.py` に定義する
-- テスト用の固定データ（モック入力・期待出力）は `tests/fixtures/` に配置する
+- テスト用の固定データはテストファイル内にインラインで定義するか `conftest.py` に共通フィクスチャとして配置する
 
 ### 6.2 ファイル一覧
 
@@ -348,17 +347,12 @@ main.py
 | `test_critic.py` | `csdg/engine/critic.py` | expected_delta算出、deviation算出、Pass/Reject判定ロジック |
 | `test_pipeline.py` | `csdg/engine/pipeline.py` | リトライ制御、Best-of-N、フォールバック、メモリ管理（統合テスト） |
 | `test_visualization.py` | `csdg/visualization.py` | グラフ生成の正常完了、ファイル出力の確認 |
+| `test_state_transition.py` | `csdg/engine/state_transition.py` | 状態遷移の半数式化テスト（max_llm_delta 含む） |
+| `test_memory.py` | `csdg/engine/memory.py` | 2層メモリ構造テスト（ShortTerm + LongTerm） |
+| `test_critic_log.py` | `csdg/engine/critic_log.py` | Criticログ蓄積・フィードバック注入テスト |
+| `test_main.py` | `csdg/main.py` | CLIエントリポイントのテスト |
 
-### 6.3 `tests/fixtures/` — テスト用固定データ
-
-| ファイル | 内容 | 用途 |
-|---|---|---|
-| `sample_state.json` | `CharacterState` のサンプルJSON | Actorのテストの入力データ |
-| `sample_event.json` | `DailyEvent` のサンプルJSON | 全テストのイベント入力 |
-| `sample_critic_score.json` | `CriticScore` のサンプルJSON（Pass/Reject両パターン） | Criticのテスト期待値 |
-| `sample_diary.md` | サンプル日記テキスト | Criticのテスト入力 |
-
-### 6.4 `conftest.py` — 共通フィクスチャ
+### 6.3 `conftest.py` — 共通フィクスチャ
 
 ```python
 # conftest.py に定義すべきフィクスチャの一覧（概念的な定義）

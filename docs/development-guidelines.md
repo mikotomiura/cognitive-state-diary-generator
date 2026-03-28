@@ -552,7 +552,7 @@ def mock_llm_client() -> LLMClient:
 ```
 
 **モック戦略のルール:**
-- `LLMClient` の抽象インターフェースに対してモックする（`OpenAIClient` の内部実装には依存しない）
+- `LLMClient` の抽象インターフェースに対してモックする（`AnthropicClient` の内部実装には依存しない）
 - モックの戻り値はテストケースごとに設定する
 - 異常系テストでは `side_effect` で例外を発生させる
 - E2Eテストは `@pytest.mark.e2e` マーカーを付け、通常のテスト実行からは除外する
@@ -684,7 +684,7 @@ uv lock
 dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "openai>=1.0",
+    "anthropic>=0.30",
     "matplotlib>=3.0",
 ]
 
