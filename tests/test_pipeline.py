@@ -27,6 +27,7 @@ from csdg.engine.pipeline import (
     _detect_structure_pattern,
     _extract_ending,
     _extract_key_images,
+    _extract_opening_text,
     _extract_rhetorical_questions,
     _extract_used_philosophers,
     _sanitize_revision,
@@ -164,7 +165,17 @@ class TestNormalFlow:
 
         updated_state = state.model_copy(update={"stress": 0.0})
         mock_actor.update_state.return_value = (updated_state, "テストreason")
-        mock_actor.generate_diary.return_value = "今日の日記です。" * 10
+        # Day ごとに完全に異なるテキストを返す (trigram overlap チェック回避)
+        _unique_chars = "あいうえおかきくけこさしすせそたちつてと"
+        day_counter = 0
+
+        async def _unique_diary(*args: object, **kwargs: object) -> str:
+            nonlocal day_counter
+            ch = _unique_chars[day_counter % len(_unique_chars)]
+            day_counter += 1
+            return f"{ch}の話。" + (ch * 20 + "。") * 5
+
+        mock_actor.generate_diary.side_effect = _unique_diary
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
 
         events = _make_events(7)
@@ -974,15 +985,24 @@ class TestPrevEndingsTracking:
         updated_state = state.model_copy(update={"stress": 0.0})
         mock_actor.update_state.return_value = (updated_state, "テストreason")
 
-        call_count = 0
+        # Day ごとに完全に異なるテキストを返す (構造的制約違反を回避)
+        _unique_texts = [
+            "まるで空のように広がる朝の光景を眺めながら考えた一日目の物語が続く。\n\n静かな夜に星を見上げて思い出すあの日の約束。",
+            "古い日記帳を開いて過去の自分と対話する穏やかな二日目の午後である。\n\n窓辺に置かれた花瓶の水が光を反射していた。",
+            "雨上がりの街を歩きながら新しい発見に出会った三日目の散歩道の風景。\n\n傘を畳んで鞄にしまい電車に乗り込んだ。",
+            "窓辺に座って遠くの山を眺めながら哲学的な思索にふけった四日目の記録。\n\n珈琲の湯気が消えるまで本を読んでいた。",
+            "友人との久しぶりの再会が心に波紋を広げた五日目の夕暮れ時の記憶。\n\n手紙を書き終えて封筒に入れた。",
+        ]
+        day_idx = 0
 
         async def generate_with_unique_ending(
             *args: object,
             **kwargs: object,
         ) -> str:
-            nonlocal call_count
-            call_count += 1
-            return f"段落。\n\n余韻{call_count}......。"
+            nonlocal day_idx
+            text = _unique_texts[day_idx % len(_unique_texts)]
+            day_idx += 1
+            return text
 
         mock_actor.generate_diary.side_effect = generate_with_unique_ending
         mock_critic.evaluate_full.return_value = _wrap_as_result(_make_pass_score())
@@ -994,9 +1014,10 @@ class TestPrevEndingsTracking:
         day5_call = mock_actor.generate_diary.call_args_list[4]
         prev_endings = day5_call.kwargs["prev_endings"]
         assert len(prev_endings) == 3
-        assert "余韻2" in prev_endings[0]
-        assert "余韻3" in prev_endings[1]
-        assert "余韻4" in prev_endings[2]
+        # Day 2, 3, 4 の余韻が保持されている (Day 1 は window 外)
+        assert "花瓶" in prev_endings[0]  # Day 2
+        assert "電車" in prev_endings[1]  # Day 3
+        assert "珈琲" in prev_endings[2]  # Day 4
 
 
 # ====================================================================
@@ -1569,3 +1590,188 @@ class TestValidateStructuralConstraints:
             theme_word_totals={"効率": 10},
         )
         assert len(violations) >= 2
+
+
+class TestConstants:
+    """共有定数の整合性テスト。"""
+
+    def test_ending_pattern_examples_not_empty(self) -> None:
+        """余韻パターン例が空でないこと。"""
+        from csdg.engine.constants import ENDING_PATTERN_EXAMPLES
+
+        assert len(ENDING_PATTERN_EXAMPLES) >= 7
+
+    def test_opening_pattern_examples_not_empty(self) -> None:
+        """書き出しパターン例が空でないこと。"""
+        from csdg.engine.constants import OPENING_PATTERN_EXAMPLES
+
+        assert len(OPENING_PATTERN_EXAMPLES) >= 6
+
+    def test_theme_word_limits_ordering(self) -> None:
+        """閾値の大小関係が正しいこと。"""
+        from csdg.engine.constants import (
+            THEME_WORD_HARD_LIMIT,
+            THEME_WORD_PER_DAY_LIMIT,
+            THEME_WORD_SOFT_LIMIT,
+        )
+
+        assert THEME_WORD_PER_DAY_LIMIT < THEME_WORD_SOFT_LIMIT < THEME_WORD_HARD_LIMIT
+
+    def test_scene_marker_days_ordering(self) -> None:
+        """シーンマーカー閾値の大小関係が正しいこと。"""
+        from csdg.engine.constants import SCENE_MARKER_HARD_DAYS, SCENE_MARKER_SOFT_DAYS
+
+        assert SCENE_MARKER_SOFT_DAYS < SCENE_MARKER_HARD_DAYS
+
+    def test_no_circular_import(self) -> None:
+        """actor.py が pipeline.py を直接インポートしていないこと。"""
+        import ast
+        import importlib.util
+        from pathlib import Path
+
+        spec = importlib.util.find_spec("csdg.engine.actor")
+        assert spec is not None and spec.origin is not None
+        actor_source = Path(spec.origin).read_text(encoding="utf-8")
+        tree = ast.parse(actor_source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert "csdg.engine.pipeline" not in node.module, (
+                    f"actor.py が pipeline.py を直接インポートしています (line {node.lineno})"
+                )
+
+
+# ====================================================================
+# 冒頭テキスト抽出テスト (P0-1)
+# ====================================================================
+
+
+class TestExtractOpeningText:
+    """_extract_opening_text のテスト。"""
+
+    def test_skips_markdown_heading(self) -> None:
+        """Markdown 見出し行をスキップする。"""
+        text = "# タイトル\n\n本文の冒頭がここから始まる。"
+        result = _extract_opening_text(text)
+        assert result == "本文の冒頭がここから始まる。"
+
+    def test_max_length(self) -> None:
+        """80文字で切り詰められる。"""
+        text = "あ" * 100
+        result = _extract_opening_text(text)
+        assert len(result) == 80
+
+    def test_empty_text(self) -> None:
+        """空テキストの場合は空文字列を返す。"""
+        assert _extract_opening_text("") == ""
+        assert _extract_opening_text("# 見出しのみ") == ""
+
+    def test_skips_empty_lines(self) -> None:
+        """空行をスキップする。"""
+        text = "\n\n\n本文がここに。"
+        assert _extract_opening_text(text) == "本文がここに。"
+
+
+# ====================================================================
+# 書き出しパターン分類改善テスト (P1-1)
+# ====================================================================
+
+
+class TestOpeningPatternImproved:
+    """改善後の _detect_opening_pattern のテスト。"""
+
+    def test_fragment_with_periods(self) -> None:
+        """句点区切りの短フレーズが断片型に分類される。"""
+        assert _detect_opening_pattern("会議。蛍光灯。スライド。沈黙。") == "断片型"
+
+    def test_question_with_darou(self) -> None:
+        """「だろう。」で終わる文が問い型に分類される。"""
+        assert _detect_opening_pattern("効率って、いつから美徳になったんだろう。") == "問い型"
+
+    def test_sensory_with_voice(self) -> None:
+        """「声」を含む文が五感型に分類される。"""
+        assert _detect_opening_pattern("古書店の奥で、ミナの声がまだ耳に残っている。") == "五感型"
+
+    def test_darou_mid_sentence_not_question(self) -> None:
+        """「だろう」が文中にあり末尾でない場合は問い型にならない。"""
+        # "だろうと" のような継続形は末尾マッチしないので問い型にはならない
+        result = _detect_opening_pattern("それは彼女だろうと思いながら歩いた長い帰り道の記憶が蘇る。")
+        assert result != "問い型"
+
+
+# ====================================================================
+# 冒頭テキスト重複チェックテスト (P0-1)
+# ====================================================================
+
+
+class TestOpeningTextOverlapValidation:
+    """_validate_structural_constraints の冒頭テキスト重複チェックのテスト。"""
+
+    def test_detects_similar_opening(self) -> None:
+        """類似した冒頭テキストが違反として検出される。"""
+        diary = "問い型で始めよう——効率って、いつから美徳になったんだろう。" + "あ" * 1000
+        prev_openings = ["問い型で始めよう——効率って、いつから美徳になったんだろう。"]
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, prev_openings_text=prev_openings,
+        )
+        assert any("冒頭テキスト" in v for v in violations)
+
+    def test_different_openings_no_violation(self) -> None:
+        """異なる冒頭テキストでは違反が発生しない。"""
+        diary = "図書館のインクの匂いが、鼻の奥にまだ残っている。" + "あ" * 1000
+        prev_openings = ["問い型で始めよう——効率って、いつから美徳になったんだろう。"]
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, prev_openings_text=prev_openings,
+        )
+        assert not any("冒頭テキスト" in v for v in violations)
+
+
+# ====================================================================
+# 余韻パターン分類改善テスト (P2-2)
+# ====================================================================
+
+
+class TestEndingPatternImproved:
+    """改善後の _detect_ending_pattern のテスト。"""
+
+    def test_two_sentence_action_ending(self) -> None:
+        """末尾2文構成の行動締め系が正しく分類される。"""
+        text = "本文がここにある。\n\nノートを閉じた。電気を消した。"
+        assert _detect_ending_pattern(text) == "行動締め系"
+
+    def test_taigen_dome_40chars(self) -> None:
+        """40文字以下の漢字/カタカナ終わりが体言止め系に分類される。"""
+        # 38文字の体言止め (旧30文字制限ではその他になっていたケース)
+        text = "本文がここにある。\n\nそれは遠い記憶の中に沈んでいく、静かな残照"
+        assert _detect_ending_pattern(text) == "体言止め系"
+
+    def test_teiru_in_penultimate_sentence(self) -> None:
+        """末尾から2文目が「〜ている」で終わる場合も〜ている系に分類される。"""
+        text = "本文。\n\n蛍光灯の光が反射している。その光は一定ではない。"
+        assert _detect_ending_pattern(text) == "〜ている系"
+
+
+# ====================================================================
+# 余韻テキスト重複チェックテスト (修正 B)
+# ====================================================================
+
+
+class TestEndingTextOverlapValidation:
+    """_validate_structural_constraints の余韻テキスト重複チェックのテスト。"""
+
+    def test_detects_similar_ending(self) -> None:
+        """類似した余韻テキストが違反として検出される。"""
+        diary = "冒頭文が十分に長いテストテキスト。\n\n缶コーヒーを飲み干して底に残った最後の一滴が落ちていく。"
+        prev_endings = ["缶コーヒーを飲み干してゴミ箱に捨てた。底に残った最後の一滴が落ちていく。"]
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, prev_endings_text=prev_endings,
+        )
+        assert any("余韻テキスト" in v for v in violations)
+
+    def test_different_endings_no_violation(self) -> None:
+        """異なる余韻テキストでは違反が発生しない。"""
+        diary = "冒頭文が十分に長いテストテキスト。\n\n窓の外に落ちる、最後の残照。"
+        prev_endings = ["缶コーヒーを飲み干して底に残った最後の一滴が落ちていく。"]
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, prev_endings_text=prev_endings,
+        )
+        assert not any("余韻テキスト" in v for v in violations)

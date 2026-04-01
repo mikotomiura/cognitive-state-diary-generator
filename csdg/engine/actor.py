@@ -1,4 +1,5 @@
-"""Actor モジュール -- Phase 1 (状態遷移) と Phase 2 (日記生成) を担当する。
+"""
+Actor モジュール -- Phase 1 (状態遷移) と Phase 2 (日記生成) を担当する。
 
 architecture.md §3.1, §3.2, §6 に準拠し、LLMClient を介して LLM を呼び出す。
 プロンプトは prompts/ ディレクトリの外部 Markdown ファイルから読み込み、
@@ -12,18 +13,18 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from csdg.engine.constants import (
+    ENDING_PATTERN_EXAMPLES,
+    OPENING_PATTERN_EXAMPLES,
+    SCENE_MARKER_HARD_DAYS,
+    SCENE_MARKER_SOFT_DAYS,
+    THEME_WORD_HARD_LIMIT,
+    THEME_WORD_PER_DAY_LIMIT,
+    THEME_WORD_SOFT_LIMIT,
+)
 from csdg.engine.prompt_loader import load_prompt
 from csdg.engine.state_transition import compute_next_state
 from csdg.schemas import CharacterState, DailyEvent, EmotionalDelta
-
-# 主題語頻度の閾値 (pipeline.py の _THEME_WORD_SOFT/HARD_LIMIT と一致させること)
-_THEME_WORD_SOFT_LIMIT = 10
-_THEME_WORD_HARD_LIMIT = 18
-_THEME_WORD_PER_DAY_LIMIT = 3
-
-# シーンマーカーの出現日数閾値
-_SCENE_MARKER_SOFT_DAYS = 2
-_SCENE_MARKER_HARD_DAYS = 3
 
 if TYPE_CHECKING:
     from csdg.config import CSDGConfig
@@ -160,6 +161,7 @@ class Actor:
         theme_word_totals: dict[str, int] | None = None,
         prev_rhetorical: list[str] | None = None,
         scene_marker_days: dict[str, int] | None = None,
+        prev_openings_text: list[str] | None = None,
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -182,6 +184,7 @@ class Actor:
             theme_word_totals: 主題語の累計使用回数。頻度制限のためプロンプトに注入する。
             prev_rhetorical: 過去の修辞疑問文。反復回避のためプロンプトに注入する。
             scene_marker_days: シーンマーカーの出現日数。反復回避のためプロンプトに注入する。
+            prev_openings_text: 過去の冒頭テキストリスト。テキストレベル重複回避のためプロンプトに注入する。
 
         Returns:
             生成されたブログ日記テキスト (Markdown)。
@@ -205,6 +208,7 @@ class Actor:
             theme_word_totals,
             prev_rhetorical,
             scene_marker_days,
+            prev_openings_text,
         )
 
         logger.debug(
@@ -291,6 +295,7 @@ class Actor:
         theme_word_totals: dict[str, int] | None = None,
         prev_rhetorical: list[str] | None = None,
         scene_marker_days: dict[str, int] | None = None,
+        prev_openings_text: list[str] | None = None,
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -311,12 +316,11 @@ class Actor:
             theme_word_totals: 主題語の累計使用回数。
             prev_rhetorical: 過去の修辞疑問文。
             scene_marker_days: シーンマーカーの出現日数。
+            prev_openings_text: 過去の冒頭テキストリスト。
 
         Returns:
             展開済みの User Prompt テキスト。
         """
-        from csdg.engine.pipeline import _ENDING_PATTERN_EXAMPLES, _OPENING_PATTERN_EXAMPLES
-
         template = load_prompt(self._prompts_dir, "Prompt_Generator.md")
         memory = "\n".join(state.memory_buffer) or "(記憶なし)"
         revision_section = f"## 修正指示\n{revision}" if revision else ""
@@ -355,7 +359,7 @@ class Actor:
             opening_limits: dict[str, int] = {"比喩型": 2}
             default_opening_limit = 3
             available_opening_patterns: list[str] = []
-            for op_name, example in _OPENING_PATTERN_EXAMPLES.items():
+            for op_name, example in OPENING_PATTERN_EXAMPLES.items():
                 limit = opening_limits.get(op_name, default_opening_limit)
                 cnt = opening_counts.get(op_name, 0)
                 if cnt < limit:
@@ -368,7 +372,7 @@ class Actor:
                 "始めてください:**\n" + "\n".join(available_opening_patterns)
             )
         else:
-            all_ops = [f"- **{op_name}**: {example}" for op_name, example in _OPENING_PATTERN_EXAMPLES.items()]
+            all_ops = [f"- **{op_name}**: {example}" for op_name, example in OPENING_PATTERN_EXAMPLES.items()]
             openings_section = (
                 "## 書き出しパターンの指定\n"
                 "**【必須】今日の書き出しは、以下のパターンのいずれかで"
@@ -411,14 +415,21 @@ class Actor:
             if forbidden_op:
                 critical_lines.append(f"- 書き出しに「{'」「'.join(forbidden_op)}」は使用禁止 (上限到達)")
 
-        if critical_lines:
-            constraints_text = (
-                "## 【最重要】今日の禁止事項\n\n"
-                "以下は過去の使用状況に基づく絶対禁止事項です。\n"
-                "**これらに違反した日記は無条件で却下されます:**\n\n" + "\n".join(critical_lines)
-            )
-        else:
-            constraints_text = ""
+        # 書き出し・余韻パターンの必須遵守を常に追加
+        critical_lines.append(
+            "- 書き出しは必ず「書き出しパターンの指定」セクションに記載された"
+            "パターンのいずれかで始めてください。"
+            "冒頭1文目の最初の40文字以内にパターンの特徴語を含めてください"
+        )
+        critical_lines.append(
+            "- 余韻は必ず「余韻パターンの指定」セクションに記載されたパターンのいずれかで締めくくってください"
+        )
+
+        constraints_text = (
+            "## 【最重要】今日の禁止事項・必須事項\n\n"
+            "以下は絶対に守るべき制約です。\n"
+            "**これらに違反した日記は無条件で却下されます:**\n\n" + "\n".join(critical_lines)
+        )
 
         prompt = template.format(
             current_state=state.model_dump_json(indent=2),
@@ -504,22 +515,32 @@ class Actor:
                 if ": " in p:
                     pattern_counts[p.split(": ", 1)[1]] += 1
             # 使用可能パターンの計算 (上限2回)
+            # 未使用パターンを優先的に推奨
             available_patterns: list[str] = []
-            for ep_name, example in _ENDING_PATTERN_EXAMPLES.items():
+            unused_patterns: list[str] = []
+            for ep_name, example in ENDING_PATTERN_EXAMPLES.items():
                 cnt = pattern_counts.get(ep_name, 0)
-                if cnt < 2:
-                    remaining = 2 - cnt
-                    available_patterns.append(f"- **{ep_name}** (残り{remaining}回): {example}")
+                if cnt == 0:
+                    unused_patterns.append(f"- **{ep_name}** (未使用・推奨): {example}")
+                elif cnt < 2:
+                    available_patterns.append(f"- {ep_name} (残り{2 - cnt}回): {example}")
+            # 未使用パターンを先に配置して優先度を明示
+            available_patterns = unused_patterns + available_patterns
+            diversity_note = ""
+            if unused_patterns:
+                diversity_note = (
+                    "\n**多様性のため、まだ使っていないパターン (「未使用・推奨」) を優先的に選んでください。**\n"
+                )
             prompt += (
                 "\n\n---\n\n## 余韻パターンの指定\n"
                 "過去の使用状況:\n"
                 f"{patterns_text}\n\n"
                 "**【必須】今日の余韻は、以下の使用可能パターンのいずれかで"
-                "締めくくってください:**\n" + "\n".join(available_patterns)
+                "締めくくってください:**\n" + diversity_note + "\n".join(available_patterns)
             )
         else:
             # Day 1: 全パターン提示
-            all_ep = [f"- **{ep_name}**: {example}" for ep_name, example in _ENDING_PATTERN_EXAMPLES.items()]
+            all_ep = [f"- **{ep_name}**: {example}" for ep_name, example in ENDING_PATTERN_EXAMPLES.items()]
             prompt += (
                 "\n\n---\n\n## 余韻パターンの指定\n"
                 "**【必須】今日の余韻は、以下のパターンのいずれかで"
@@ -533,13 +554,13 @@ class Actor:
             for word, total in sorted(theme_word_totals.items()):
                 if total <= 0:
                     continue
-                if total >= _THEME_WORD_HARD_LIMIT:
+                if total >= THEME_WORD_HARD_LIMIT:
                     word_lines.append(f"- 「{word}」: これまで{total}回使用(上限超過)→ **今日は使用禁止**")
-                elif total >= _THEME_WORD_SOFT_LIMIT:
-                    remaining = max(0, _THEME_WORD_HARD_LIMIT - total)
-                    per_day = min(_THEME_WORD_PER_DAY_LIMIT, remaining)
+                elif total >= THEME_WORD_SOFT_LIMIT:
+                    remaining = max(0, THEME_WORD_HARD_LIMIT - total)
+                    per_day = min(THEME_WORD_PER_DAY_LIMIT, remaining)
                     word_lines.append(
-                        f"- 「{word}」: これまで{total}回使用(上限目安: {_THEME_WORD_HARD_LIMIT}回)"
+                        f"- 「{word}」: これまで{total}回使用(上限目安: {THEME_WORD_HARD_LIMIT}回)"
                         f"→ 今日は{per_day}回以下に抑えてください"
                     )
                 else:
@@ -547,7 +568,7 @@ class Actor:
         # per-day 制限は常時注入 (コールドスタート対策)
         prompt += (
             "\n\n---\n\n## 主題語の使用状況\n"
-            f"**今日の日記では各主題語を{_THEME_WORD_PER_DAY_LIMIT}回以下にしてください。**\n"
+            f"**今日の日記では各主題語を{THEME_WORD_PER_DAY_LIMIT}回以下にしてください。**\n"
             "意識的に他の表現に言い換えてください。\n"
         )
         if word_lines:
@@ -576,9 +597,9 @@ class Actor:
         if scene_marker_days:
             overused: list[str] = []
             for marker, days in sorted(scene_marker_days.items()):
-                if days >= _SCENE_MARKER_HARD_DAYS:
+                if days >= SCENE_MARKER_HARD_DAYS:
                     overused.append(f"- 「{marker}」: {days}日間で使用 → **今日は使用禁止**")
-                elif days >= _SCENE_MARKER_SOFT_DAYS:
+                elif days >= SCENE_MARKER_SOFT_DAYS:
                     overused.append(f"- 「{marker}」: {days}日間で使用 → 今日は使用を控えてください")
             if overused:
                 overused_text = "\n".join(overused)
@@ -588,6 +609,17 @@ class Actor:
                     "**別の場所・物・感覚で場面を構成してください。**\n"
                     f"{overused_text}"
                 )
+
+        # 過去の冒頭テキスト注入 (テキストレベル重複禁止)
+        if prev_openings_text:
+            opening_texts = "\n".join(f"- Day {i + 1}: 「{t}」" for i, t in enumerate(prev_openings_text))
+            prompt += (
+                "\n\n---\n\n## 過去の書き出しテキスト (テキストレベル重複禁止)\n"
+                "以下は過去の日記の冒頭文です。\n"
+                "**これらと同じ文・同じフレーズで書き出すことは絶対に禁止です。**\n"
+                "パターンが同じでも、テキストは完全に異なるものにしてください。\n"
+                f"{opening_texts}"
+            )
 
         if long_term_context:
             prompt += self._format_long_term_context(long_term_context)

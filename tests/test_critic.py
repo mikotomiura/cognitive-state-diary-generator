@@ -17,8 +17,8 @@ from csdg.engine.critic import (
     CriticPipeline,
     RuleBasedValidator,
     StatisticalChecker,
-    _compute_trigram_overlap,
-    _extract_trigrams,
+    compute_trigram_overlap,
+    extract_trigrams,
     compute_deviation,
     compute_expected_delta,
     judge,
@@ -467,25 +467,25 @@ class TestStatisticalChecker:
 class TestTrigramFunctions:
     """トライグラム関連関数のテスト."""
 
-    def test_extract_trigrams(self) -> None:
-        trigrams = _extract_trigrams("abcde")
+    def testextract_trigrams(self) -> None:
+        trigrams = extract_trigrams("abcde")
         assert "abc" in trigrams
         assert "bcd" in trigrams
         assert "cde" in trigrams
 
     def test_extract_trigrams_short_text(self) -> None:
-        assert _extract_trigrams("ab") == set()
+        assert extract_trigrams("ab") == set()
 
     def test_compute_overlap_identical(self) -> None:
-        overlap = _compute_trigram_overlap("あいうえお", "あいうえお")
+        overlap = compute_trigram_overlap("あいうえお", "あいうえお")
         assert overlap == pytest.approx(1.0)
 
     def test_compute_overlap_different(self) -> None:
-        overlap = _compute_trigram_overlap("あいうえお", "かきくけこ")
+        overlap = compute_trigram_overlap("あいうえお", "かきくけこ")
         assert overlap == pytest.approx(0.0)
 
     def test_compute_overlap_empty(self) -> None:
-        overlap = _compute_trigram_overlap("", "abc")
+        overlap = compute_trigram_overlap("", "abc")
         assert overlap == pytest.approx(0.0)
 
 
@@ -988,6 +988,35 @@ class TestCriticPipeline:
         # deviation が大きいため inverse_estimation_score が低くなるはず
         if result.inverse_estimation_score is not None and result.inverse_estimation_score <= 2.0:
             assert result.final_score.emotional_plausibility <= test_config.veto_cap_emotional
+
+    @pytest.mark.asyncio()
+    async def test_veto_overrides_safety_adjustment(
+        self,
+        mock_llm_client: LLMClient,
+        test_config: CSDGConfig,
+        critic_prompts_dir: Path,
+    ) -> None:
+        """Veto が _MAX_SCORE_ADJUSTMENT の安全制限をバイパスして強制適用される."""
+        assert isinstance(mock_llm_client, AsyncMock)
+        # LLM は persona を高スコアで返すが、Layer1 の禁止一人称 veto でキャップされるはず
+        mock_llm_client.generate_structured.return_value = CriticScore(
+            temporal_consistency=5,
+            emotional_plausibility=5,
+            persona_deviation=5,
+        )
+
+        pipeline = CriticPipeline(mock_llm_client, test_config, prompts_dir=critic_prompts_dir)
+        prev = _make_state()
+        curr = _make_state(stress=0.0, motivation=0.3)
+        # 禁止一人称「うち」を含む日記 (veto 対象)
+        diary = "あ" * 500 + "うちは今日も頑張った" + "あ" * 500
+        event = _make_event()
+
+        result = await pipeline.evaluate(prev, curr, diary, event)
+
+        # veto が安全制限を上書きし、persona_deviation が cap 以下になること
+        assert result.veto_applied.get("persona_deviation") is True
+        assert result.final_score.persona_deviation <= test_config.veto_cap_persona
 
 
 # ====================================================================

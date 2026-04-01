@@ -1,4 +1,5 @@
-"""Critic モジュール -- Phase 3 (Critic評価) を担当する。
+"""
+Critic モジュール -- Phase 3 (Critic評価) を担当する。
 
 3層構造 (RuleBasedValidator / StatisticalChecker / LLMJudge) による
 評価パイプラインを実装する。各層は独立にスコアを算出し、
@@ -128,7 +129,7 @@ def judge(score: CriticScore) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _extract_trigrams(text: str) -> set[str]:
+def extract_trigrams(text: str) -> set[str]:
     """テキストからトライグラムの集合を抽出する。"""
     chars = text.replace(" ", "").replace("\n", "")
     if len(chars) < 3:
@@ -136,10 +137,10 @@ def _extract_trigrams(text: str) -> set[str]:
     return {chars[i : i + 3] for i in range(len(chars) - 2)}
 
 
-def _compute_trigram_overlap(text_a: str, text_b: str) -> float:
+def compute_trigram_overlap(text_a: str, text_b: str) -> float:
     """2つのテキスト間のトライグラム重複率を算出する。"""
-    trigrams_a = _extract_trigrams(text_a)
-    trigrams_b = _extract_trigrams(text_b)
+    trigrams_a = extract_trigrams(text_a)
+    trigrams_b = extract_trigrams(text_b)
     if not trigrams_a or not trigrams_b:
         return 0.0
     intersection = trigrams_a & trigrams_b
@@ -241,7 +242,7 @@ class RuleBasedValidator:
 
         # 前日との重複率チェック -> temporal_consistency
         if prev_diary:
-            overlap = _compute_trigram_overlap(diary_text, prev_diary)
+            overlap = compute_trigram_overlap(diary_text, prev_diary)
             details["trigram_overlap"] = round(overlap, 3)
             if overlap > _MAX_TRIGRAM_OVERLAP:
                 penalties["temporal_consistency"] += 1.5
@@ -300,7 +301,7 @@ class RuleBasedValidator:
                 details["ending_template_repetition"] = True
 
             # 余韻の trigram 類似度チェック (keyword 検出の補完)
-            ending_overlap = _compute_trigram_overlap(curr_ending, prev_ending)
+            ending_overlap = compute_trigram_overlap(curr_ending, prev_ending)
             details["ending_trigram_overlap"] = round(ending_overlap, 3)
             if ending_overlap > 0.25:
                 penalties["temporal_consistency"] += 1.0
@@ -843,18 +844,21 @@ class CriticPipeline:
             correction = (l12_norm - l3_val) * _CONSENSUS_AMPLIFICATION
             amplified = weighted + correction
 
-            if effective_veto.get(field):
-                cap = veto_cap_map[field]
-                amplified = min(amplified, cap)
-                logger.info("[Veto] %s capped to %.1f", field, cap)
-
             # 安全制限: 補正前との差を±_MAX_SCORE_ADJUSTMENT に制限
             non_amplified = max(1, min(5, round(weighted)))
             final = max(1, min(5, round(amplified)))
-            scores[field] = max(
+            score = max(
                 non_amplified - _MAX_SCORE_ADJUSTMENT,
                 min(non_amplified + _MAX_SCORE_ADJUSTMENT, final),
             )
+
+            # Veto は安全制限の後に強制適用 (安全制限をバイパス)
+            if effective_veto.get(field):
+                cap = veto_cap_map[field]
+                score = min(score, max(1, min(5, round(cap))))
+                logger.info("[Veto] %s capped to %d (was %d)", field, score, non_amplified)
+
+            scores[field] = score
 
         # reject_reason / revision_instruction は LLMJudge から取得
         reject_reason = layer3.details.get("reject_reason")

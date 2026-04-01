@@ -540,6 +540,7 @@ main.py
         ├─▶ engine/actor.py
         │     ├─▶ schemas.py (CharacterState, DailyEvent)
         │     ├─▶ engine/llm_client.py (AnthropicClient)
+        │     ├─▶ engine/constants.py (共有定数)
         │     └─▶ prompts/ (System_Persona.md, Prompt_StateUpdate.md, Prompt_Generator.md)
         ├─▶ engine/critic.py
         │     ├─▶ schemas.py (CriticScore, LayerScore, CriticResult)
@@ -549,6 +550,7 @@ main.py
         │     ├─▶ schemas.py (Memory, ShortTermMemory, LongTermMemory)
         │     └─▶ prompts/ (Prompt_MemoryExtract.md, System_MemoryManager.md)
         ├─▶ engine/critic_log.py (CriticLog)
+        ├─▶ engine/constants.py (共有定数: パターン例・閾値)
         └─▶ config.py (EMOTION_SENSITIVITY, リトライ設定, CriticWeights, VetoCaps, StateTransitionConfig)
 
 scenario.py
@@ -654,6 +656,14 @@ class PipelineLog(BaseModel):
 - 7日分の `DailyEvent` のリスト定義
 - 初期状態 `h_0` の定義
 - シナリオのバリデーション（Day番号の連続性、emotional_impact の範囲）
+
+#### `engine/constants.py` — 共有定数
+- actor.py と pipeline.py の両方から参照されるパターン例・閾値の一元管理
+- 循環依存を防止するための中間レイヤー
+- 余韻パターン例 (`ENDING_PATTERN_EXAMPLES`)
+- 書き出しパターン例 (`OPENING_PATTERN_EXAMPLES`)
+- 主題語閾値 (`THEME_WORD_SOFT_LIMIT` / `HARD_LIMIT` / `PER_DAY_LIMIT`)
+- シーンマーカー閾値 (`SCENE_MARKER_SOFT_DAYS` / `HARD_DAYS`)
 
 #### `engine/actor.py` — Actor
 - Phase 1: `update_state(prev_state, event, long_term_context?) -> CharacterState`

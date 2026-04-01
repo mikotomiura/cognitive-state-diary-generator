@@ -24,7 +24,12 @@ cognitive-State-Diary-generator/
 │   ├── architecture.md                #   技術設計書
 │   ├── repository-structure.md        #   本ドキュメント
 │   ├── development-guidelines.md      #   開発ガイドライン
-│   └── glossary.md                    #   ユビキタス言語定義
+│   ├── glossary.md                    #   ユビキタス言語定義
+│   └── erre-design.md                 #   ERRE 設計文書
+│
+├── scripts/                           # 分析・検証スクリプト
+│   ├── verify_critic_discrimination.py #   Critic 弁別力検証
+│   └── quality_report.py              #   品質サマリレポート生成
 │
 ├── csdg/                              # メインアプリケーションパッケージ
 │   ├── __init__.py                    #   パッケージ初期化 (バージョン定義)
@@ -36,6 +41,7 @@ cognitive-State-Diary-generator/
 │   │
 │   └── engine/                        #   パイプラインエンジン
 │       ├── __init__.py
+│       ├── constants.py              #     共有定数 (パターン例・閾値、循環依存防止)
 │       ├── actor.py                   #     Actor (Phase 1 + Phase 2)
 │       ├── critic.py                  #     Critic (Phase 3, 3層構造: RuleBased/Statistical/LLMJudge)
 │       ├── pipeline.py               #     パイプライン制御 (ループ・リトライ)
@@ -209,6 +215,7 @@ Thumbs.db
 | `repository-structure.md` | ディレクトリ構成、ファイル配置規約、命名規則 | 開発者 | `architecture.md` |
 | `development-guidelines.md` | コーディング規約、Git運用、テスト方針、PR手順 | 開発者 | `glossary.md`, `repository-structure.md` |
 | `glossary.md` | プロジェクト固有の用語定義 | 全員 | なし（最下層） |
+| `erre-design.md` | ERRE フレームワークと CSDG の対応関係 | 開発者、評価者 | `glossary.md`, `architecture.md` |
 
 ### 3.3 ドキュメントの依存関係
 
@@ -257,7 +264,8 @@ development-guidelines.md    ← 「どう運用するか」
 | モジュール | 責務 | 主な依存先 | テスト |
 |---|---|---|---|
 | `__init__.py` | サブパッケージ初期化 | なし | — |
-| `actor.py` | Phase 1 (状態遷移) と Phase 2 (コンテンツ生成) の実行。プロンプト読み込み・展開 | `schemas`, `llm_client`, `config` | `test_actor.py` |
+| `constants.py` | actor.py と pipeline.py の共有定数 (パターン例・閾値) | なし | `test_pipeline.py` (TestConstants) |
+| `actor.py` | Phase 1 (状態遷移) と Phase 2 (コンテンツ生成) の実行。プロンプト読み込み・展開 | `schemas`, `llm_client`, `config`, `constants` | `test_actor.py` |
 | `critic.py` | Phase 3 (評価) の実行。`expected_delta` / `deviation` の算出、Pass/Reject判定 | `schemas`, `llm_client`, `config` | `test_critic.py` |
 | `pipeline.py` | Day単位のループ、リトライ制御、Self-Healing、memory_buffer管理、ログ収集、正規化項の検出・蓄積 (9種)、構造的制約バリデーション (`_validate_structural_constraints`) | `actor`, `critic`, `schemas`, `config` | `test_pipeline.py` |
 | `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` と Anthropic Claude 実装 `AnthropicClient` | `anthropic`, `pydantic` | `test_actor.py`(モック) |
