@@ -1,4 +1,5 @@
-"""シナリオ定義モジュール。
+"""
+シナリオ定義モジュール。
 
 7日分の DailyEvent (SCENARIO) と初期状態 (INITIAL_STATE) を定義する。
 functional-design.md §8 のシナリオ仕様および glossary.md の用語定義に準拠する。

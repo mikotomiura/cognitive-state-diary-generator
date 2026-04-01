@@ -1,4 +1,5 @@
-"""LLM API 呼び出しの抽象インターフェースと Anthropic Claude 実装。
+"""
+LLM API 呼び出しの抽象インターフェースと Anthropic Claude 実装。
 
 architecture.md §8.3 に基づき、LLM 呼び出しを抽象化する。
 AnthropicClient は tool_use パターンで構造化出力を実現する。

@@ -1,4 +1,5 @@
-"""CSDG パイプラインの CLI エントリポイント。
+"""
+CSDG パイプラインの CLI エントリポイント。
 
 functional-design.md §4 (CLI インターフェース仕様) および
 architecture.md §7 (出力・可視化設計) に準拠する。

@@ -1,4 +1,5 @@
-"""可視化モジュール -- 感情パラメータ推移と CriticScore 推移グラフを生成する。
+"""
+可視化モジュール -- 感情パラメータ推移と CriticScore 推移グラフを生成する。
 
 architecture.md §7.3 に準拠し、2段構成の state_trajectory.png を出力する。
 """
