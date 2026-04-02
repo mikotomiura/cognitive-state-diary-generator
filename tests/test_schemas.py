@@ -426,6 +426,101 @@ class TestLLMDeltaResponse:
 # ====================================================================
 
 
+class TestHumanConditionValidation:
+    """HumanCondition のバリデーションテスト。"""
+
+    def test_default_values(self) -> None:
+        """デフォルト値で HumanCondition が生成できる。"""
+        from csdg.schemas import HumanCondition
+
+        hc = HumanCondition()
+        assert hc.sleep_quality == 0.7
+        assert hc.physical_energy == 0.7
+        assert hc.mood_baseline == 0.0
+        assert hc.cognitive_load == 0.2
+        assert hc.emotional_conflict is None
+
+    @pytest.mark.parametrize(
+        ("field", "raw", "expected"),
+        [
+            ("sleep_quality", 1.5, 1.0),
+            ("sleep_quality", -0.5, 0.0),
+            ("sleep_quality", 0.5, 0.5),
+            ("physical_energy", 2.0, 1.0),
+            ("physical_energy", -1.0, 0.0),
+            ("cognitive_load", 1.5, 1.0),
+            ("cognitive_load", -0.3, 0.0),
+            ("mood_baseline", 2.0, 1.0),
+            ("mood_baseline", -2.0, -1.0),
+            ("mood_baseline", 0.5, 0.5),
+        ],
+    )
+    def test_clamp_values(self, field: str, raw: float, expected: float) -> None:
+        """連続変数はクランプされる。"""
+        from csdg.schemas import HumanCondition
+
+        hc = HumanCondition(**{field: raw})
+        assert getattr(hc, field) == expected
+
+    def test_emotional_conflict_optional(self) -> None:
+        """emotional_conflict は文字列または None を受け入れる。"""
+        from csdg.schemas import HumanCondition
+
+        hc_none = HumanCondition(emotional_conflict=None)
+        assert hc_none.emotional_conflict is None
+
+        hc_str = HumanCondition(emotional_conflict="達成感と虚無感の同居")
+        assert hc_str.emotional_conflict == "達成感と虚無感の同居"
+
+    def test_roundtrip_serialization(self) -> None:
+        """HumanCondition の JSON 往復変換で値が保持される。"""
+        from csdg.schemas import HumanCondition
+
+        original = HumanCondition(
+            sleep_quality=0.3,
+            physical_energy=0.5,
+            mood_baseline=-0.2,
+            cognitive_load=0.8,
+            emotional_conflict="テスト葛藤",
+        )
+        restored = HumanCondition.model_validate_json(original.model_dump_json())
+        assert original == restored
+
+
+class TestCharacterStateHumanCondition:
+    """CharacterState の human_condition フィールドテスト。"""
+
+    def test_default_human_condition(self) -> None:
+        """human_condition のデフォルトは HumanCondition()。"""
+        state = _make_state()
+        assert state.human_condition is not None
+        assert state.human_condition.sleep_quality == 0.7
+
+    def test_custom_human_condition(self) -> None:
+        """カスタム human_condition が設定できる。"""
+        from csdg.schemas import HumanCondition
+
+        hc = HumanCondition(sleep_quality=0.3, mood_baseline=-0.5)
+        state = _make_state(human_condition=hc)
+        assert state.human_condition.sleep_quality == 0.3
+        assert state.human_condition.mood_baseline == -0.5
+
+    def test_roundtrip_with_human_condition(self) -> None:
+        """human_condition を含む CharacterState の JSON 往復変換。"""
+        from csdg.schemas import HumanCondition
+
+        original = _make_state(
+            fatigue=0.5,
+            human_condition=HumanCondition(
+                sleep_quality=0.4,
+                cognitive_load=0.8,
+                emotional_conflict="テスト",
+            ),
+        )
+        restored = CharacterState.model_validate_json(original.model_dump_json())
+        assert original == restored
+
+
 class TestShortTermMemoryWindowSize:
     """ShortTermMemory が window_size でエントリを制限することのテスト。"""
 

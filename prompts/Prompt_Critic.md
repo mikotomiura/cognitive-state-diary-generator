@@ -16,6 +16,9 @@
 ### 今日のイベント
 {event}
 
+### 人間的コンディション
+{human_condition}
+
 ### 期待される感情変動（expected_delta）
 {expected_delta}
 
@@ -188,6 +191,13 @@
 - Layer 1/2 で検出された問題がある場合、LLMJudge のスコアもそれを反映してください。
 - Layer 1 の emotional_plausibility が 5.0 でない場合、LLMJudge が 5 を付ける正当な理由を慎重に検討してください。
 - deviation (期待変動との乖離) が 0.1 を超えている軸がある場合、emotional_plausibility を 5 にするのは不適切です。
+
+### human_condition との整合性を検証してください
+- `sleep_quality` が 0.4 未満なのに洗練された流暢な文体が維持されている場合 → emotional_plausibility を **1段階減点**
+- `cognitive_load` が 0.7 超なのに思考が整然と一貫している場合 → emotional_plausibility を **1段階減点**
+- `mood_baseline` が -0.3 未満なのにイベント非依存の倦怠感が一切表現されていない場合 → emotional_plausibility を **1段階減点**
+- `emotional_conflict` が存在するのに一貫した感情トーンで書かれている場合 → emotional_plausibility を **1段階減点**
+- 逆に、上記の状態を文体に自然に反映できている場合は **加点要素** として評価してください
 
 ### 定量データを必ず参照してください
 - `expected_delta` と `deviation` の数値を必ず確認し、スコアに反映してください。

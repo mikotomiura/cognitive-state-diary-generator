@@ -257,7 +257,7 @@ development-guidelines.md    ← 「どう運用するか」
 | `__init__.py` | パッケージ初期化。`__version__` の定義 | なし | — |
 | `main.py` | CLI引数の解析、パイプライン実行、ファイル出力、可視化呼び出し | `config`, `scenario`, `engine/pipeline`, `visualization` | `test_pipeline.py`(統合) |
 | `config.py` | 環境変数・`.env` からの設定読み込み。`CSDGConfig` クラス | `pydantic-settings` | `test_config.py` |
-| `schemas.py` | `DailyEvent`, `CharacterState`, `EmotionalDelta`, `LLMDeltaResponse`, `CriticScore`, `CriticResult`, `GenerationRecord`, `PipelineLog`, `MemoryExtraction` | `pydantic` | `test_schemas.py` |
+| `schemas.py` | `HumanCondition`, `DailyEvent`, `CharacterState` (`human_condition` サブモデル含む), `EmotionalDelta`, `LLMDeltaResponse`, `CriticScore`, `CriticResult`, `GenerationRecord`, `PipelineLog`, `MemoryExtraction` | `pydantic` | `test_schemas.py` |
 | `scenario.py` | 7日分の `DailyEvent` リスト定義、初期状態 `h_0` 定義、バリデーション | `schemas` | `test_scenario.py` |
 | `visualization.py` | `state_trajectory.png` の生成。`PipelineLog` → matplotlib グラフ | `matplotlib`, `schemas` | `test_visualization.py` |
 
@@ -357,7 +357,7 @@ main.py
 | `test_critic.py` | `csdg/engine/critic.py` | expected_delta算出、deviation算出、Pass/Reject判定ロジック |
 | `test_pipeline.py` | `csdg/engine/pipeline.py` | リトライ制御、Best-of-N、フォールバック、メモリ管理（統合テスト） |
 | `test_visualization.py` | `csdg/visualization.py` | グラフ生成の正常完了、ファイル出力の確認 |
-| `test_state_transition.py` | `csdg/engine/state_transition.py` | 状態遷移の半数式化テスト（max_llm_delta 含む） |
+| `test_state_transition.py` | `csdg/engine/state_transition.py` | 状態遷移の半数式化テスト（max_llm_delta 含む）、HumanCondition 自動導出・感情的葛藤検出テスト |
 | `test_memory.py` | `csdg/engine/memory.py` | 2層メモリ構造テスト（ShortTerm + LongTerm） |
 | `test_critic_log.py` | `csdg/engine/critic_log.py` | Criticログ蓄積・フィードバック注入テスト |
 | `test_main.py` | `csdg/main.py` | CLIエントリポイントのテスト |

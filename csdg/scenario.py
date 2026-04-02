@@ -7,7 +7,7 @@ functional-design.md §8 のシナリオ仕様および glossary.md の用語定
 
 from __future__ import annotations
 
-from csdg.schemas import CharacterState, DailyEvent
+from csdg.schemas import CharacterState, DailyEvent, HumanCondition
 
 # ---------------------------------------------------------------------------
 # 7日分の DailyEvent リスト
@@ -113,6 +113,13 @@ INITIAL_STATE: CharacterState = CharacterState(
     growth_theme="「考えること」と「生きること」の折り合い",
     memory_buffer=[],
     relationships={"深森那由他": 0.6, "ミナ": 0.4},
+    human_condition=HumanCondition(
+        sleep_quality=0.55,
+        physical_energy=0.6,
+        mood_baseline=-0.15,
+        cognitive_load=0.3,
+        emotional_conflict=None,
+    ),
 )
 
 

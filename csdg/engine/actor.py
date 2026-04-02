@@ -378,7 +378,16 @@ class Actor:
             # 未使用パターンを先に配置して優先度を明示
             available_opening_patterns = unused_opening_patterns + available_opening_patterns
             diversity_note = ""
+            recommended_opening = ""
             if unused_opening_patterns:
+                # 未使用パターンから1つを明示的に推奨 (LLMの選択肢を絞る)
+                first_unused = unused_opening_patterns[0]
+                # "- **比喩型** (未使用・推奨): ..." からパターン名を抽出
+                rec_name = first_unused.split("**")[1] if "**" in first_unused else "未使用パターン"
+                recommended_opening = (
+                    f"\n**【今日の推奨】書き出しは「{rec_name}」を使ってください。**"
+                    " 他の未使用パターンでも構いませんが、推奨パターンを最優先にしてください。\n"
+                )
                 diversity_note = (
                     "\n**多様性のため、まだ使っていないパターン (「未使用・推奨」) を優先的に選んでください。**\n"
                 )
@@ -386,7 +395,7 @@ class Actor:
                 "## 書き出しパターンの指定\n"
                 f"過去の使用状況:\n{openings_text}\n\n"
                 "**【必須】今日の書き出しは、以下の使用可能パターンのいずれかで"
-                "始めてください:**\n" + diversity_note + "\n".join(available_opening_patterns)
+                "始めてください:**\n" + recommended_opening + diversity_note + "\n".join(available_opening_patterns)
             )
         else:
             all_ops = [f"- **{op_name}**: {example}" for op_name, example in OPENING_PATTERN_EXAMPLES.items()]
@@ -471,10 +480,22 @@ class Actor:
             "**これらに違反した日記は無条件で却下されます:**\n\n" + "\n".join(critical_lines)
         )
 
+        # HumanCondition のフォーマット
+        hc = state.human_condition
+        hc_lines = [
+            f"- 睡眠の質: {hc.sleep_quality:.2f} (0.0=不眠, 1.0=熟睡)",
+            f"- 身体的エネルギー: {hc.physical_energy:.2f} (0.0=消耗, 1.0=充実)",
+            f"- 気分ベースライン: {hc.mood_baseline:.2f} (-1.0=鬱傾向, 1.0=躁傾向)",
+            f"- 認知負荷: {hc.cognitive_load:.2f} (0.0=余裕, 1.0=パンク)",
+            f"- 感情的葛藤: {hc.emotional_conflict or 'なし'}",
+        ]
+        human_condition_text = "\n".join(hc_lines)
+
         prompt = template.format(
             current_state=state.model_dump_json(indent=2),
             event=event.model_dump_json(indent=2),
             memory_buffer=memory,
+            human_condition=human_condition_text,
             revision_instruction=revision_section,
             prev_endings=endings_section,
             prev_images=images_section,
@@ -568,7 +589,14 @@ class Actor:
             # 未使用パターンを先に配置して優先度を明示
             available_patterns = unused_patterns + available_patterns
             diversity_note = ""
+            recommended_ending = ""
             if unused_patterns:
+                first_unused_ep = unused_patterns[0]
+                rec_ep_name = first_unused_ep.split("**")[1] if "**" in first_unused_ep else "未使用パターン"
+                recommended_ending = (
+                    f"\n**【今日の推奨】余韻は「{rec_ep_name}」で締めくくってください。**"
+                    " 他の未使用パターンでも構いませんが、推奨パターンを最優先にしてください。\n"
+                )
                 diversity_note = (
                     "\n**多様性のため、まだ使っていないパターン (「未使用・推奨」) を優先的に選んでください。**\n"
                 )
@@ -577,7 +605,7 @@ class Actor:
                 "過去の使用状況:\n"
                 f"{patterns_text}\n\n"
                 "**【必須】今日の余韻は、以下の使用可能パターンのいずれかで"
-                "締めくくってください:**\n" + diversity_note + "\n".join(available_patterns)
+                "締めくくってください:**\n" + recommended_ending + diversity_note + "\n".join(available_patterns)
             )
         else:
             # Day 1: 全パターン提示

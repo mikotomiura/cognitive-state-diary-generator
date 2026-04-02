@@ -63,6 +63,34 @@ class DailyEvent(BaseModel):
         return v
 
 
+class HumanCondition(BaseModel):
+    """人間的コンディション: イベント非依存の生物的・心理的状態。
+
+    日次イベントの感情インパクトとは独立に変動し、
+    日記の「人間的深度」を制御するサブモデル。
+    """
+
+    sleep_quality: float = Field(default=0.7, description="睡眠の質 (0.0: 不眠 〜 1.0: 熟睡)")
+    physical_energy: float = Field(default=0.7, description="身体的エネルギー (0.0: 消耗 〜 1.0: 充実)")
+    mood_baseline: float = Field(default=0.0, description="気分のベースライン (-1.0: 鬱傾向 〜 1.0: 躁傾向)")
+    cognitive_load: float = Field(default=0.2, description="認知負荷 (0.0: 余裕 〜 1.0: パンク)")
+    emotional_conflict: str | None = Field(
+        default=None, description="現在の感情的葛藤 (例: '達成感と虚無感の同居')"
+    )
+
+    @field_validator("sleep_quality", "physical_energy", "cognitive_load")
+    @classmethod
+    def clamp_unipolar(cls, v: float) -> float:
+        """単極性連続変数を 0.0〜1.0 にクランプする。"""
+        return max(0.0, min(1.0, v))
+
+    @field_validator("mood_baseline")
+    @classmethod
+    def clamp_mood_baseline(cls, v: float) -> float:
+        """気分ベースラインを -1.0〜1.0 にクランプする。"""
+        return max(-1.0, min(1.0, v))
+
+
 class CharacterState(BaseModel):
     """キャラクター内部状態 (h_t)。
 
@@ -79,6 +107,7 @@ class CharacterState(BaseModel):
     growth_theme: str = Field(description="1週間を通じた成長テーマ")
     memory_buffer: list[str] = Field(default_factory=list, description="過去3日分のdaily_summary")
     relationships: dict[str, float] = Field(default_factory=dict, description="人物への好感度")
+    human_condition: HumanCondition = Field(default_factory=HumanCondition, description="人間的コンディション")
 
     @field_validator("motivation", "stress")
     @classmethod

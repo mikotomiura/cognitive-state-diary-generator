@@ -56,6 +56,15 @@ ActorとCriticは異なるプロンプト（異なる「人格」）で動作し
 - **離散変数:** `current_focus`（現在の関心事）, `unresolved_issue`（未解決の課題）, `growth_theme`（成長テーマ）
 - **累積記憶:** `memory_buffer`（過去3日分のサマリ）, `relationships`（人物への好感度）
 
+### HumanCondition（人間的コンディション）
+`CharacterState` のサブモデルとして保持される、イベント非依存の生物的・心理的状態。
+日次イベントの感情インパクトとは独立に変動し、日記の「人間的深度」を制御する。
+- `sleep_quality`（睡眠の質: 0.0〜1.0）: 前日の fatigue/stress から導出。低値は文体の散漫さに影響
+- `physical_energy`（身体的エネルギー: 0.0〜1.0）: sleep_quality と fatigue から導出。motivation に負の補正を与える
+- `mood_baseline`（気分ベースライン: -1.0〜1.0）: イベント非依存の気分の慣性。ランダムドリフトで緩やかに変動
+- `cognitive_load`（認知負荷: 0.0〜1.0）: unresolved_issue の存在やストレスにより上昇。高値は思考の断片化に影響
+- `emotional_conflict`（感情的葛藤: Optional[str]）: 矛盾する感情シグナルの同時発生を記述
+
 ### h_t（潜在変数 / 内部状態ベクトル）
 時刻 `t` における `CharacterState` のインスタンスを指す数学的表記。
 `h_{t-1}` は前日の状態、`h_0` は初期状態を意味する。
@@ -201,7 +210,7 @@ Critic Layer 1（RuleBasedValidator）が致命的違反を検出した際に、
 `actor.py` の `_build_generator_prompt()` で組み立てられ、`Prompt_Generator.md` の `{critical_constraints}` プレースホルダに展開される。
 
 ### _validate_structural_constraints（構造的制約バリデーション）
-Phase 2 生成直後に実行される軽量なルールベースチェック。余韻パターン上限・場面構造の連続使用/上限・主題語 per-day 上限・書き出しパターン上限・禁止余韻パターン・本文フレーズの Day 間重複・**文字数の理想範囲 (420文字以下)**の項目を検査し、違反メッセージのリストを返す。
+Phase 2 生成直後に実行される軽量なルールベースチェック。余韻パターン上限・場面構造の連続使用/上限・主題語 per-day 上限・書き出しパターン上限・禁止余韻パターン・本文フレーズの Day 間重複・**文字数の理想範囲 (450文字以下)**の項目を検査し、違反メッセージのリストを返す。
 Critic（Phase 3）が検査しない構造的多様性を補完する。構造違反がある場合は Critic Pass 時でも1回だけ再試行を強制する。
 
 ### 高インパクト日文体検証 (High-Impact Style Check)

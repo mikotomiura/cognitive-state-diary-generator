@@ -94,6 +94,7 @@ h_t = f(h_{t-1}, x_t, persona)
 - `h_t` は必ず `CharacterState` Pydanticモデルとしてバリデーションされる
 - テキスト本文（日記）は `h_t` に含めない。Phase 1 と Phase 2 を分離することで、JSONパースエラーのリスクを低減する
 - 連続変数はクランプする: `fatigue` は `0.0` 〜 `1.0`、`motivation`, `stress` は `-1.0` 〜 `1.0`
+- `human_condition` (HumanCondition サブモデル) はイベント非依存の生物的・心理的状態を保持する。`sleep_quality`, `physical_energy`, `mood_baseline`, `cognitive_load`, `emotional_conflict` の5フィールドで構成され、`compute_human_condition()` により前日の状態から自動導出される
 
 ### 2.2 メモリアーキテクチャ
 
@@ -209,6 +210,20 @@ clamp(h_t[param], -1.0, 1.0)
 Phase 2/3 リトライでは final_state の deviation は修正不能なため、Phase 1 段階で補正する設計。
 
 新スキーマ: `EmotionalDelta` (fatigue/motivation/stress の変化量)
+
+**HumanCondition 自動導出** (`compute_human_condition()`, `_detect_emotional_conflict()`):
+
+連続変数の更新と同時に、`HumanCondition` サブモデルを決定論的に自動導出する:
+
+| フィールド | 導出ロジック |
+|---|---|
+| `sleep_quality` | 前日の `fatigue`/`stress` が高いほど低下 (ベースライン 0.7) |
+| `physical_energy` | `sleep_quality × 0.6 + (1 - fatigue) × 0.4` |
+| `mood_baseline` | 前日値 × 0.85 + ランダムドリフト + イベント微小影響 |
+| `cognitive_load` | 前日値の減衰 + `unresolved_issue` 存在時 +0.15 + `stress` 寄与 |
+| `emotional_conflict` | ポジティブイベント+高ストレス等の矛盾シグナルを検出 |
+
+`physical_energy < 0.4` の場合、`motivation` に負の補正 (energy penalty) を適用する。
 
 ### 2.4 状態遷移のバリデーション
 

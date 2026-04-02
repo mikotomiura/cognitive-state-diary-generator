@@ -28,6 +28,7 @@ Day 1 〜 Day 7 ループ:
 ### 主な特徴
 
 - **状態空間モデル** -- 感情パラメータを管理 (fatigue: `0.0`〜`1.0`、motivation/stress: `-1.0`〜`1.0`)
+- **HumanCondition (人間的コンディション)** -- イベント非依存の生物的・心理的状態 (睡眠の質、身体的エネルギー、気分ベースライン、認知負荷、感情的葛藤) を自動導出し、日記の文体に反映
 - **半数式化された状態遷移** -- 決定論的な数式ベース + LLM による解釈的補正で再現性を確保
 - **3 層 Critic + 段階化ボーナス** -- ルールベース検証 (L1) + 統計的検証 (L2) + LLM 定性評価 (L3) の重み付き統合 (0.40 / 0.35 / 0.25)。L1/L2 の各指標に sweet spot / acceptable / penalty の多段階ボーナスを設け、加重平均が integer 境界を跨ぐ十分な帯域幅を確保。base score 2.5 と組み合わせ、最終スコアの弁別力を実現。emotional_plausibility は 6 段階 (L1) / 7 段階 (L2) のグラデーションで評価
 - **Veto 機構** -- 禁止一人称・文字数極端逸脱・高 trigram 重複等の致命的違反に対し、安全制限をバイパスして強制的にスコア上限を適用
@@ -183,7 +184,7 @@ python scripts/verify_critic_discrimination.py output/generation_log.json
 
 ```
 csdg/
-  schemas.py              # Pydantic データモデル (CharacterState, CriticScore 等)
+  schemas.py              # Pydantic データモデル (HumanCondition, CharacterState, CriticScore 等)
   config.py               # 環境変数ベースの設定管理
   scenario.py             # 7日分のイベント + 初期状態
   engine/
@@ -191,7 +192,7 @@ csdg/
     critic.py             # Phase 3 (3層評価: RuleBased / Statistical / LLMJudge)
     critic_log.py         # CriticLog 蓄積・フィードバック注入
     constants.py          # 共有定数 (パターン例 / 閾値 / 制限値)
-    state_transition.py   # 半数式化された状態遷移 (decay + event + LLM delta)
+    state_transition.py   # 半数式化された状態遷移 (decay + event + LLM delta + HumanCondition 自動導出)
     memory.py             # 2層メモリ (ShortTerm + LongTerm)
     pipeline.py           # パイプライン制御 (リトライ / Temperature Decay / Best-of-N)
     llm_client.py         # LLM API 抽象化 (Anthropic Claude 実装)
@@ -224,8 +225,8 @@ docs/
 
 | 層 | クラス | 種別 | 重み | 検証内容 |
 |---|---|---|---|---|
-| Layer 1 | `RuleBasedValidator` | 決定論的 | 0.40 | 文字数 (段階化)、わたし使用頻度 (段階化 + 過剰使用ペナルティ)、余韻「......」(段階化)、前日重複率 (段階化)、感情 deviation 6 段階評価 (0.03/0.05/0.08/0.10/0.15 閾値)、余韻 trigram 類似度、禁止一人称検出 + Veto |
-| Layer 2 | `StatisticalChecker` | 数値的 | 0.35 | 平均文長 (段階化)、句読点頻度 (段階化)、文数 (段階化)、疑問文比率 (段階化)、deviation 7 段階連続スケーリング (0.05/0.10/0.15/0.30/0.40/0.60 閾値)、断定文比率、高インパクト日文体検証 |
+| Layer 1 | `RuleBasedValidator` | 決定論的 | 0.40 | 文字数 (段階化)、わたし使用頻度 (段階化 + 過剰使用ペナルティ)、余韻「......」(段階化)、前日重複率 (段階化)、感情 deviation 6 段階評価 (0.05/0.08/0.12/0.15/0.20 閾値)、余韻 trigram 類似度、禁止一人称検出 + Veto |
+| Layer 2 | `StatisticalChecker` | 数値的 | 0.35 | 平均文長 (段階化)、句読点頻度 (段階化)、文数 (段階化)、疑問文比率 (段階化)、deviation 7 段階連続スケーリング (0.08/0.12/0.18/0.30/0.40/0.60 閾値)、断定文比率、高インパクト日文体検証 |
 | Layer 3 | `LLMJudge` | 定性的 | 0.25 | LLM による temporal / emotional / persona 評価 (L1/L2 結果を参照基準として構造化注入) |
 
 最終スコアは純粋な加重平均の `round()` で決定 (base score 2.5)。Veto 対象の致命的違反 (禁止一人称 / 文字数極端逸脱 / 高 trigram 重複) は安全制限をバイパスして強制的にスコア上限を適用。

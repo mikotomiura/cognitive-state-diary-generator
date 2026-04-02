@@ -601,9 +601,9 @@ def _validate_structural_constraints(
     # 10. 文字数の理想範囲チェック (タイトル行除外)
     body_lines = [line for line in diary_text.strip().split("\n") if not re.match(r"^#{1,6}\s", line)]
     body_len = len("\n".join(body_lines).strip())
-    if body_len > 420:
-        over = body_len - 400
-        violations.append(f"本文が{body_len}文字です。約400文字 (420文字以下) に削減してください (現在{over}文字超過)")
+    if body_len > 450:
+        over = body_len - 420
+        violations.append(f"本文が{body_len}文字です。約420文字 (450文字以下) に削減してください (現在{over}文字超過)")
 
     return violations
 
