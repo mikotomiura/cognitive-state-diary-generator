@@ -132,10 +132,11 @@ Reject時にCriticが出力する、Actorへの具体的な修正指示テキス
 次回のリトライ時にActorのプロンプトに注入される。
 
 ### Temperature Decay（温度減衰）
-リトライ時にLLMの Temperature パラメータを段階的に下げる戦略。
-- 1回目: 0.7（多様性を持たせて生成）
-- 2回目: 0.5（やや保守的に）
-- 3回目: 0.3（決定論的に）
+リトライ時にLLMの Temperature パラメータを区分線形スケジュールで段階的に下げる戦略。
+- 1回目: 0.70（多様性を持たせて生成）
+- 2回目: 0.60（十分な多様性を維持）
+- 3回目: 0.45（やや保守的に）
+- 4回目: 0.30（決定論的に）
 
 ### Best-of-N（ベスト・オブ・N）
 最大リトライ回数（3回）を超えても合格しない場合のフォールバック戦略。
@@ -144,6 +145,17 @@ Reject時にCriticが出力する、Actorへの具体的な修正指示テキス
 ### Self-Healing（自己修復）
 LLMの出力パースエラー（JSONの不正な構造化出力）や、リトライ上限超過時に、システムがクラッシュせずに安全な状態に復帰する機構の総称。
 例: `ValidationError` 発生時に前日の状態をコピーし、暫定サマリを挿入するフォールバック。
+
+### Deviation Guard（偏差ガード）
+Phase 1 (State Update) 完了後に deviation を即座に計算し、`max_dev > 0.10` の場合に
+actual values を expected_delta 方向に α=0.5 でソフトブレンド補正する機構。
+Phase 2/3 リトライでは `final_state` の deviation は修正不能であるため、
+Phase 1 段階で deviation 超過を防止する。`pipeline.py` の `_DEVIATION_GUARD_THRESHOLD` と
+`_DEVIATION_GUARD_ALPHA` で制御される。
+
+### prev_endings_text（過去の余韻テキスト注入）
+過去の日記の余韻（末尾段落）原文を Generator プロンプトに注入し、テキストレベルの余韻重複を
+事前に回避する機構。`prev_openings_text`（冒頭テキスト注入）と対をなす。
 
 ### フォールバック (Fallback)
 エラー発生時に実行される代替処理。Self-Healingの具体的な実装を指す。

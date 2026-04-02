@@ -201,8 +201,12 @@ clamp(h_t[param], -1.0, 1.0)
 **LLM delta 制約**: `max_llm_delta` により各軸の1ステップあたり変化量を制約し、
 状態空間モデルとしての安定性 (bounded dynamics) を保証する。
 
-**Temperature スケジュール**: 指数減衰 `temp = final + (initial - final) * exp(-decay_constant * i)` を採用。
-序盤は探索的 (高 temperature)、中盤以降は急速に安定し、物語の着地が安定する。
+**Temperature スケジュール**: 区分線形 `[0.70, 0.60, 0.45, 0.30]` を採用。
+2 回目リトライでも十分な多様性 (0.60) を維持しつつ、終盤は確実に収束 (0.30) する。
+
+**Phase 1 偏差ガード (Deviation Guard)**: Phase 1 完了後に deviation を即座に計算し、
+`max_dev > 0.10` の場合は actual values を expected_delta 方向に α=0.5 でソフトブレンド補正する。
+Phase 2/3 リトライでは final_state の deviation は修正不能なため、Phase 1 段階で補正する設計。
 
 新スキーマ: `EmotionalDelta` (fatigue/motivation/stress の変化量)
 
@@ -609,7 +613,7 @@ class CSDGConfig(BaseSettings):
 
     @property
     def temperature_schedule(self) -> list[float]:
-        """指数減衰: temp = final + (initial - final) * exp(-decay * i)"""
+        """区分線形: [0.70, 0.60, 0.45, 0.30]"""
         ...
 ```
 
