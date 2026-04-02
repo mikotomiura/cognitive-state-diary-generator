@@ -375,8 +375,7 @@ class Actor:
             diversity_note = ""
             if unused_opening_patterns:
                 diversity_note = (
-                    "\n**多様性のため、まだ使っていないパターン"
-                    " (「未使用・推奨」) を優先的に選んでください。**\n"
+                    "\n**多様性のため、まだ使っていないパターン (「未使用・推奨」) を優先的に選んでください。**\n"
                 )
             openings_section = (
                 "## 書き出しパターンの指定\n"
