@@ -60,6 +60,8 @@ _MAX_REVISION_LENGTH = 500
 _MAX_PREV_ENDINGS = 3
 _MAX_PREV_IMAGES = 5
 _IMAGE_CLIP_LENGTH = 50
+_DEVIATION_GUARD_THRESHOLD = 0.10
+_DEVIATION_GUARD_ALPHA = 0.5
 
 # シーンを構成する場所・物のマーカー語
 _SCENE_MARKERS = (
@@ -290,6 +292,9 @@ def _detect_opening_pattern(diary_text: str) -> str:
         fragments = [f.strip() for f in first_line.split("\u3002") if f.strip()]
         if len(fragments) >= 3 and all(len(f) <= 10 for f in fragments):
             return "断片型"
+    # 会話の残響型: 人物の声・言葉が残っている表現 (五感型より優先)
+    if re.search(r"(さん|くん|ちゃん|先生|先輩|後輩)の(声|言葉|一言)", head):
+        return "会話型"
     if any(kw in head for kw in _OPENING_SENSORY_KEYWORDS):
         return "五感型"
     if any(kw in head for kw in _OPENING_RECALL_KEYWORDS):
@@ -939,6 +944,36 @@ class PipelineRunner:
             logger.warning("[Day %d] Fallback: Phase 1 前日状態コピー", day)
 
         phase1_ms = int((time.monotonic() - phase1_start) * 1000)
+
+        # --- Phase 1.5: Deviation Guard ---
+        # Phase 1 の出力 deviation が大きい場合、Phase 2/3 リトライでは修正不能なため
+        # ここでソフト補正を適用する (a=0.5 で expected_delta 方向にブレンド)
+        if not fallback_used and curr_state is not None:
+            expected_delta = compute_expected_delta(event, self._config.emotion_sensitivity)
+            deviation = compute_deviation(prev_state, curr_state, expected_delta)
+            max_dev = max(abs(v) for v in deviation.values()) if deviation else 0.0
+            if max_dev > _DEVIATION_GUARD_THRESHOLD:
+                alpha = _DEVIATION_GUARD_ALPHA
+                updates: dict[str, float] = {}
+                for param in ("stress", "motivation", "fatigue"):
+                    actual = getattr(curr_state, param)
+                    expected_val = getattr(prev_state, param) + expected_delta.get(param, 0.0)
+                    corrected = actual * (1.0 - alpha) + expected_val * alpha
+                    # fatigue: 0.0-1.0, stress/motivation: -1.0-1.0
+                    lo = 0.0 if param == "fatigue" else -1.0
+                    hi = 1.0
+                    updates[param] = max(lo, min(hi, corrected))
+                curr_state = curr_state.model_copy(update=updates)
+                new_dev = compute_deviation(prev_state, curr_state, expected_delta)
+                new_max = max(abs(v) for v in new_dev.values()) if new_dev else 0.0
+                logger.info(
+                    "[Day %d] Deviation Guard: max_dev %.3f -> %.3f (alpha=%.1f)",
+                    day,
+                    max_dev,
+                    new_max,
+                    alpha,
+                )
+
         logger.info("[Day %d] Phase 1: State Update ... OK (%.1fs)", day, phase1_ms / 1000)
 
         # --- Phase 2 + Phase 3: Generation-Evaluation Loop ---

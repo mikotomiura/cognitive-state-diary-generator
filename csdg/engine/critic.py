@@ -287,7 +287,7 @@ class RuleBasedValidator:
                 penalties["emotional_plausibility"] += 1.0
                 details[f"{param}_direction_mismatch"] = True
 
-        # 加点/減点: 感情パラメータの乖離に基づく5段階スケーリング
+        # 加点/減点: 感情パラメータの乖離に基づく段階スケーリング
         details["rule_max_deviation"] = round(max_dev, 3)
         if max_dev < 0.03:
             base_scores["emotional_plausibility"] += 1.5
@@ -295,10 +295,12 @@ class RuleBasedValidator:
             base_scores["emotional_plausibility"] += 1.0
         elif max_dev < 0.08:
             base_scores["emotional_plausibility"] += 0.5
-        elif max_dev < 0.12:
+        elif max_dev < 0.10:
+            base_scores["emotional_plausibility"] += 0.25
+        elif max_dev < 0.15:
             pass  # 標準: base のまま
         else:
-            base_scores["emotional_plausibility"] -= 1.0  # penalty 増強
+            base_scores["emotional_plausibility"] -= 0.5  # penalty (緩和)
 
         # unresolved_issue の null チェック: 強いネガティブイベントなのに未解決課題が未設定
         if event.emotional_impact <= -0.5 and curr_state.unresolved_issue is None:
@@ -483,12 +485,12 @@ class StatisticalChecker:
             base_scores["emotional_plausibility"] += 1.0
         elif max_deviation < 0.15:
             base_scores["emotional_plausibility"] += 0.5
-        elif max_deviation < 0.25:
+        elif max_deviation < 0.30:
             pass  # base のまま
         elif max_deviation < 0.40:
-            penalties["emotional_plausibility"] += 1.0  # penalty 増強
+            penalties["emotional_plausibility"] += 0.5  # penalty (緩和)
         elif max_deviation < 0.60:
-            penalties["emotional_plausibility"] += 1.5
+            penalties["emotional_plausibility"] += 1.0
         else:
             penalties["emotional_plausibility"] += 2.5
 

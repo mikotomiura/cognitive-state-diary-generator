@@ -1266,10 +1266,10 @@ class TestFinerEmotionalTiers:
         assert result.emotional_plausibility >= 3.5
 
     def test_large_deviation_gets_penalty(self) -> None:
-        """max_dev >= 0.12 → 1.5 (base 2.5 - 1.0)."""
+        """max_dev >= 0.15 → 2.0 (base 2.5 - 0.5)."""
         prev = _make_state(stress=0.0, motivation=0.0, fatigue=0.0)
         curr = _make_state(stress=0.2, motivation=0.0, fatigue=0.0)
-        # expected=0, actual=0.2, dev=0.2 > 0.12
+        # expected=0, actual=0.2, dev=0.2 > 0.15
         expected = {"stress": 0.0, "motivation": 0.0, "fatigue": 0.0}
         result = self.validator.evaluate(
             "あ" * 400,
@@ -1279,7 +1279,7 @@ class TestFinerEmotionalTiers:
             expected,
         )
         assert result.emotional_plausibility <= 2.5
-        assert result.details.get("rule_max_deviation", 0) >= 0.12
+        assert result.details.get("rule_max_deviation", 0) >= 0.15
 
 
 class TestCharCountValidation:

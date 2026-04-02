@@ -1117,6 +1117,22 @@ class TestDetectOpeningPattern:
         text = "# タイトル\n\n\n図書館のインクの匂いが、鼻の奥にまだ残っている。"
         assert _detect_opening_pattern(text) == "五感型"
 
+    def test_conversation_echo_with_voice(self) -> None:
+        """「人名+声が」パターンが会話型として検出される (五感型より優先)。"""
+        assert _detect_opening_pattern("那由他さんの声が、まだ耳に残っている。") == "会話型"
+
+    def test_conversation_echo_with_words(self) -> None:
+        """「人名+言葉が」パターンが会話型として検出される。"""
+        assert _detect_opening_pattern("ミナちゃんの言葉が、胸の奥で響いている。") == "会話型"
+
+    def test_conversation_echo_with_single_word(self) -> None:
+        """「人名+一言が」パターンが会話型として検出される。"""
+        assert _detect_opening_pattern("先生の一言が、まだ頭の中を駆け巡っている。") == "会話型"
+
+    def test_pure_sensory_voice_not_overridden(self) -> None:
+        """人名を伴わない「声」は五感型のまま。"""
+        assert _detect_opening_pattern("遠くで聞こえる声が、静かな夜を揺らした。") == "五感型"
+
 
 # ====================================================================
 # _detect_structure_pattern: 場面構造パターンの分類
