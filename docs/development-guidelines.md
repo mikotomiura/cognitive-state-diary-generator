@@ -447,7 +447,7 @@ feat(actor): Phase 2 日記生成の実装
 
 | テスト観点 | テストケース例 |
 |---|---|
-| expected_delta 算出 | `emotional_impact=+0.6` → `stress=-0.18, motivation=+0.24, fatigue=-0.12` |
+| expected_delta 算出 | `emotional_impact=+0.6` → `stress=-0.27, motivation=+0.24, fatigue=-0.12` |
 | deviation 算出 | 期待値と実際の差分が正しく計算される |
 | Pass 判定 | 全スコア 3 以上 → `True` |
 | Reject 判定 | `persona_deviation=2` → `False` |
@@ -460,7 +460,7 @@ feat(actor): Phase 2 日記生成の実装
 |---|---|
 | 正常系 | 7Day 全てが1回で Pass する場合のフロー |
 | リトライ | Phase 3 で Reject → リトライで Pass する場合 |
-| Temperature Decay | リトライ時に Temperature が 0.7 → 0.5 → 0.3 に減衰する |
+| Temperature Decay | リトライ時に Temperature が区分線形 [0.70, 0.60, 0.45, 0.30] で減衰する |
 | Best-of-N | 3回リトライしても全 Reject → 最高スコアのペアが選択される |
 | Phase 1 フォールバック | バリデーションエラー3回 → 前日状態コピーが実行される |
 | memory_buffer 管理 | Day 5 で memory_buffer が [Day2, Day3, Day4] になる |

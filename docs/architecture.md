@@ -193,8 +193,8 @@ clamp(h_t[param], -1.0, 1.0)
 
 | パラメータ | デフォルト値 | 説明 |
 |---|---|---|
-| `decay_rate` | 0.1 | 自然減衰 (ストレスは放っておくと下がる等) |
-| `event_weight` | 0.6 | イベントの直接影響 |
+| `decay_rate` | 0.15 | 自然減衰 (ストレスは放っておくと下がる等) |
+| `event_weight` | 0.75 | イベントの直接影響 |
 | `llm_weight` | 0.3 | LLM による解釈的補正 |
 | `noise_scale` | 0.05 | 微小ランダム性 (自然さのため) |
 | `max_llm_delta` | 0.3 | LLM delta の絶対値上限 (安定性保証) |
@@ -558,12 +558,12 @@ main.py
   └─▶ engine/pipeline.py
         ├─▶ engine/actor.py
         │     ├─▶ schemas.py (CharacterState, DailyEvent)
-        │     ├─▶ engine/llm_client.py (AnthropicClient)
+        │     ├─▶ engine/llm_client.py (AnthropicClient / GeminiClient)
         │     ├─▶ engine/constants.py (共有定数)
         │     └─▶ prompts/ (System_Persona.md, Prompt_StateUpdate.md, Prompt_Generator.md)
         ├─▶ engine/critic.py
         │     ├─▶ schemas.py (CriticScore, LayerScore, CriticResult)
-        │     ├─▶ engine/llm_client.py (AnthropicClient)
+        │     ├─▶ engine/llm_client.py (AnthropicClient / GeminiClient)
         │     └─▶ prompts/ (System_Persona.md, Prompt_Critic.md)
         ├─▶ engine/memory.py (MemoryManager)
         │     ├─▶ schemas.py (Memory, ShortTermMemory, LongTermMemory)
@@ -603,10 +603,16 @@ class CSDGConfig(BaseSettings):
 
     model_config = {"env_prefix": "CSDG_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
-    # LLM設定
-    llm_api_key: str = Field(exclude=True)
-    llm_model: str = "claude-sonnet-4-20250514"
-    llm_base_url: str = "https://api.anthropic.com"
+    # LLM設定: プロバイダー選択
+    llm_provider: str = "anthropic"  # "anthropic" or "gemini"
+
+    # Anthropic 専用
+    anthropic_api_key: str = Field(exclude=True)
+    anthropic_model: str = "claude-sonnet-4-20250514"
+
+    # Gemini 専用
+    gemini_api_key: str = Field(exclude=True)
+    gemini_model: str = "gemini-2.0-flash"
 
     # パイプライン設定
     max_retries: int = 3
@@ -615,14 +621,14 @@ class CSDGConfig(BaseSettings):
     memory_window_size: int = 3
 
     # 感情感度係数
-    emotion_sensitivity_stress: float = -0.3
+    emotion_sensitivity_stress: float = -0.45
     emotion_sensitivity_motivation: float = 0.4
     emotion_sensitivity_fatigue: float = -0.2
 
     # Critic 重み / Veto / 状態遷移 (各 nested model に委譲)
     critic_weight_rule_based: float = 0.4   # → CriticWeights
     veto_cap_persona: float = 2.0           # → VetoCaps
-    state_transition_decay_rate: float = 0.1  # → StateTransitionConfig
+    state_transition_decay_rate: float = 0.15  # → StateTransitionConfig
 
     output_dir: str = "output"
 

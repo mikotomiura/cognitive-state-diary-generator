@@ -48,7 +48,8 @@ cognitive-State-Diary-generator/
 │       ├── llm_client.py             #     LLM API 抽象化レイヤー
 │       ├── state_transition.py       #     状態遷移の半数式化 (決定論的骨格+LLM delta+max_llm_delta制約)
 │       ├── memory.py                 #     2層メモリ構造 (ShortTerm + LongTerm)
-│       └── critic_log.py             #     Criticログ蓄積・軽量フィードバック (JSON Lines永続化)
+│       ├── critic_log.py             #     Criticログ蓄積・軽量フィードバック (JSON Lines永続化)
+│       └── prompt_loader.py          #     プロンプトファイル読み込みユーティリティ
 │
 ├── prompts/                           # プロンプトモジュール (外部Markdownファイル)
 │   ├── System_Persona.md             #   キャラクターの不変ルール (意味記憶)
@@ -71,6 +72,7 @@ cognitive-State-Diary-generator/
 │   ├── test_state_transition.py     #   状態遷移の半数式化テスト (max_llm_delta含む)
 │   ├── test_memory.py               #   2層メモリ構造テスト
 │   ├── test_critic_log.py           #   Criticログ蓄積テスト
+│   ├── test_llm_client.py          #   LLM API抽象化レイヤーのテスト
 │   └── test_main.py                 #   CLIエントリポイントのテスト
 │
 ├── output/                            # パイプライン出力 (Git管理外)
@@ -270,7 +272,8 @@ development-guidelines.md    ← 「どう運用するか」
 | `actor.py` | Phase 1 (状態遷移) と Phase 2 (コンテンツ生成) の実行。プロンプト読み込み・展開 | `schemas`, `llm_client`, `config`, `constants` | `test_actor.py` |
 | `critic.py` | Phase 3 (評価) の実行。`expected_delta` / `deviation` の算出、Pass/Reject判定 | `schemas`, `llm_client`, `config` | `test_critic.py` |
 | `pipeline.py` | Day単位のループ、リトライ制御、Self-Healing、memory_buffer管理、ログ収集、正規化項の検出・蓄積 (9種)、構造的制約バリデーション (`_validate_structural_constraints`) | `actor`, `critic`, `schemas`, `config` | `test_pipeline.py` |
-| `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` と Anthropic Claude 実装 `AnthropicClient` | `anthropic`, `pydantic` | `test_actor.py`(モック) |
+| `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` と `AnthropicClient` / `GeminiClient` 実装 | `anthropic`, `google-genai`, `pydantic` | `test_llm_client.py`, `test_actor.py`(モック) |
+| `prompt_loader.py` | プロンプトファイル読み込みユーティリティ | なし | `test_actor.py`(間接) |
 
 ### 4.4 モジュール間の依存関係図
 
@@ -360,6 +363,7 @@ main.py
 | `test_state_transition.py` | `csdg/engine/state_transition.py` | 状態遷移の半数式化テスト（max_llm_delta 含む）、HumanCondition 自動導出・感情的葛藤検出テスト |
 | `test_memory.py` | `csdg/engine/memory.py` | 2層メモリ構造テスト（ShortTerm + LongTerm） |
 | `test_critic_log.py` | `csdg/engine/critic_log.py` | Criticログ蓄積・フィードバック注入テスト |
+| `test_llm_client.py` | `csdg/engine/llm_client.py` | LLM API抽象化レイヤーのテスト（AnthropicClient / GeminiClient） |
 | `test_main.py` | `csdg/main.py` | CLIエントリポイントのテスト |
 
 ### 6.3 `conftest.py` — 共通フィクスチャ

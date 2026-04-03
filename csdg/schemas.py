@@ -269,7 +269,7 @@ class CriticResult(BaseModel):
     llm_judge: LayerScore = Field(description="Layer 3: LLMJudge のスコア")
     final_score: CriticScore = Field(description="3層統合後の最終 CriticScore")
     weights: dict[str, float] = Field(
-        default_factory=lambda: {"rule_based": 0.3, "statistical": 0.2, "llm_judge": 0.5},
+        default_factory=lambda: {"rule_based": 0.40, "statistical": 0.35, "llm_judge": 0.25},
         description="各層の重み",
     )
     inverse_estimation_score: float | None = Field(
