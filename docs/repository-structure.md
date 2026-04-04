@@ -271,7 +271,7 @@ development-guidelines.md    ← 「どう運用するか」
 | `constants.py` | actor.py と pipeline.py の共有定数 (パターン例・閾値) | なし | `test_pipeline.py` (TestConstants) |
 | `actor.py` | Phase 1 (状態遷移) と Phase 2 (コンテンツ生成) の実行。プロンプト読み込み・展開 | `schemas`, `llm_client`, `config`, `constants` | `test_actor.py` |
 | `critic.py` | Phase 3 (評価) の実行。`expected_delta` / `deviation` の算出、Pass/Reject判定 | `schemas`, `llm_client`, `config` | `test_critic.py` |
-| `pipeline.py` | Day単位のループ、リトライ制御、Self-Healing、memory_buffer管理、ログ収集、正規化項の検出・蓄積 (9種)、構造的制約バリデーション (`_validate_structural_constraints`) | `actor`, `critic`, `schemas`, `config` | `test_pipeline.py` |
+| `pipeline.py` | Day単位のループ、リトライ制御 (ボーナス再試行・二重注入含む)、Self-Healing、memory_buffer管理、ログ収集、正規化項の検出・蓄積 (9種)、構造的制約バリデーション (`_validate_structural_constraints`, 11項目) | `actor`, `critic`, `schemas`, `config` | `test_pipeline.py` |
 | `llm_client.py` | LLM API呼び出しの抽象クラス `LLMClient` と `AnthropicClient` / `GeminiClient` 実装 | `anthropic`, `google-genai`, `pydantic` | `test_llm_client.py`, `test_actor.py`(モック) |
 | `prompt_loader.py` | プロンプトファイル読み込みユーティリティ | なし | `test_actor.py`(間接) |
 
