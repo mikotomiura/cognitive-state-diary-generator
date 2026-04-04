@@ -724,6 +724,7 @@ class PipelineRunner:
         prev_openings_text: list[str] = []
         prev_endings_text: list[str] = []
         prev_diary_texts: list[str] = []
+        prev_day_ending_text: str = ""
 
         for event in events:
             day = event.day
@@ -749,6 +750,7 @@ class PipelineRunner:
                         prev_openings_text=list(prev_openings_text),
                         prev_endings_text=list(prev_endings_text),
                         prev_diary_texts=list(prev_diary_texts),
+                        prev_day_ending=prev_day_ending_text,
                     )
                     records.append(record)
                     total_retries += record.retry_count
@@ -781,6 +783,8 @@ class PipelineRunner:
                         prev_endings_text.append(ending_text)
                     # 日記本文の蓄積 (フレーズ重複チェック用)
                     prev_diary_texts.append(record.diary_text)
+                    # 前日末尾テキストの更新 (次のDayの前日接続用)
+                    prev_day_ending_text = _extract_ending(record.diary_text)
                     # 場面構造パターンの蓄積
                     structure = _detect_structure_pattern(record.diary_text)
                     used_structures.append(f"Day {day}: {structure}")
@@ -884,6 +888,7 @@ class PipelineRunner:
         prev_openings_text: list[str] | None = None,
         prev_endings_text: list[str] | None = None,
         prev_diary_texts: list[str] | None = None,
+        prev_day_ending: str = "",
     ) -> GenerationRecord:
         """1Dayのパイプラインを実行する。
 
@@ -906,6 +911,7 @@ class PipelineRunner:
             scene_marker_days: シーンマーカーの出現日数 (反復回避用)。
             prev_openings_text: 過去の冒頭テキストリスト (テキスト重複検出用)。
             prev_endings_text: 過去の余韻テキストリスト (テキスト重複検出用)。
+            prev_day_ending: 前日の日記の末尾段落テキスト (前日接続用)。
 
         Returns:
             1Day分の生成記録。
@@ -1025,6 +1031,7 @@ class PipelineRunner:
                 scene_marker_days=scene_marker_days,
                 prev_openings_text=prev_openings_text,
                 prev_endings_text=prev_endings_text,
+                prev_day_ending=prev_day_ending,
             )
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms

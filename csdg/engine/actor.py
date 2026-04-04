@@ -163,6 +163,7 @@ class Actor:
         scene_marker_days: dict[str, int] | None = None,
         prev_openings_text: list[str] | None = None,
         prev_endings_text: list[str] | None = None,
+        prev_day_ending: str = "",
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -187,6 +188,7 @@ class Actor:
             scene_marker_days: シーンマーカーの出現日数。反復回避のためプロンプトに注入する。
             prev_openings_text: 過去の冒頭テキストリスト。テキストレベル重複回避のためプロンプトに注入する。
             prev_endings_text: 過去の余韻テキストリスト。テキストレベル重複回避のためプロンプトに注入する。
+            prev_day_ending: 前日の日記の末尾段落テキスト。前日接続のためプロンプトに注入する。
 
         Returns:
             生成されたブログ日記テキスト (Markdown)。
@@ -212,6 +214,7 @@ class Actor:
             scene_marker_days,
             prev_openings_text,
             prev_endings_text,
+            prev_day_ending,
         )
 
         logger.debug(
@@ -301,6 +304,7 @@ class Actor:
         scene_marker_days: dict[str, int] | None = None,
         prev_openings_text: list[str] | None = None,
         prev_endings_text: list[str] | None = None,
+        prev_day_ending: str = "",
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -323,6 +327,7 @@ class Actor:
             scene_marker_days: シーンマーカーの出現日数。
             prev_openings_text: 過去の冒頭テキストリスト。
             prev_endings_text: 過去の余韻テキストリスト。
+            prev_day_ending: 前日の日記の末尾段落テキスト。前日接続用。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -699,6 +704,15 @@ class Actor:
                 "**これらと同じ文・同じフレーズで締めくくることは絶対に禁止です。**\n"
                 "語彙・構文・リズムのいずれかが明確に異なる余韻を使用してください。\n"
                 f"{ending_texts}"
+            )
+
+        # 前日末尾テキストの注入 (前日接続用)
+        if prev_day_ending:
+            prompt += (
+                "\n\n---\n\n## 前日の末尾テキスト(接続の参考)\n"
+                "以下は前日の日記の最後の段落です。\n"
+                "1文目でこの内容(出来事・感情・人物)に具体的に言及してください。\n\n"
+                f"> {prev_day_ending}\n"
             )
 
         if long_term_context:

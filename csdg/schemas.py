@@ -74,9 +74,7 @@ class HumanCondition(BaseModel):
     physical_energy: float = Field(default=0.7, description="身体的エネルギー (0.0: 消耗 〜 1.0: 充実)")
     mood_baseline: float = Field(default=0.0, description="気分のベースライン (-1.0: 鬱傾向 〜 1.0: 躁傾向)")
     cognitive_load: float = Field(default=0.2, description="認知負荷 (0.0: 余裕 〜 1.0: パンク)")
-    emotional_conflict: str | None = Field(
-        default=None, description="現在の感情的葛藤 (例: '達成感と虚無感の同居')"
-    )
+    emotional_conflict: str | None = Field(default=None, description="現在の感情的葛藤 (例: '達成感と虚無感の同居')")
 
     @field_validator("sleep_quality", "physical_energy", "cognitive_load")
     @classmethod
@@ -170,6 +168,7 @@ class CriticScore(BaseModel):
     temporal_consistency: int = Field(description="時間的整合性スコア (1〜5)")
     emotional_plausibility: int = Field(description="感情的妥当性スコア (1〜5)")
     persona_deviation: int = Field(description="ペルソナ維持度スコア (1〜5)")
+    hook_strength: float = Field(default=0.0, ge=0.0, le=1.0, description="フック強度 (0.0〜1.0, 診断専用)")
     reject_reason: str | None = Field(default=None, description="リジェクト時の理由")
     revision_instruction: str | None = Field(default=None, description="修正指示")
 

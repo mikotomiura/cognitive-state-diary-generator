@@ -650,3 +650,65 @@ class TestRhetoricalInjection:
 
         user_prompt = mock_llm_client.generate_text.call_args.kwargs["user_prompt"]
         assert "使用済み修辞疑問文" not in user_prompt
+
+    @pytest.mark.asyncio()
+    async def test_prev_day_ending_injected(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+    ) -> None:
+        """prev_day_ending が渡された場合、プロンプトに前日末尾セクションが含まれること。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_text.return_value = "日記テキスト"
+
+        event = DailyEvent(
+            day=2,
+            event_type="neutral",
+            domain="仕事",
+            description="テストイベントの説明文です",
+            emotional_impact=0.2,
+        )
+        state = CharacterState(
+            fatigue=0.1,
+            motivation=0.2,
+            stress=-0.1,
+            current_focus="x",
+            growth_theme="x",
+        )
+        ending = "空になったカップを見つめて、席を立った。"
+
+        await actor.generate_diary(state, event, prev_day_ending=ending)
+
+        user_prompt = mock_llm_client.generate_text.call_args.kwargs["user_prompt"]
+        assert "前日の末尾テキスト" in user_prompt
+        assert ending in user_prompt
+
+    @pytest.mark.asyncio()
+    async def test_prev_day_ending_empty_not_injected(
+        self,
+        actor: Actor,
+        mock_llm_client: LLMClient,
+    ) -> None:
+        """prev_day_ending が空の場合、前日末尾セクションが含まれないこと。"""
+        assert isinstance(mock_llm_client, AsyncMock)
+        mock_llm_client.generate_text.return_value = "日記テキスト"
+
+        event = DailyEvent(
+            day=1,
+            event_type="neutral",
+            domain="仕事",
+            description="テストイベントの説明文です",
+            emotional_impact=0.2,
+        )
+        state = CharacterState(
+            fatigue=0.1,
+            motivation=0.2,
+            stress=-0.1,
+            current_focus="x",
+            growth_theme="x",
+        )
+
+        await actor.generate_diary(state, event, prev_day_ending="")
+
+        user_prompt = mock_llm_client.generate_text.call_args.kwargs["user_prompt"]
+        assert "前日の末尾テキスト" not in user_prompt

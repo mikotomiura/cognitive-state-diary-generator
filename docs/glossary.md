@@ -71,14 +71,15 @@ ActorとCriticは異なるプロンプト（異なる「人格」）で動作し
 **コード上では** `CharacterState` オブジェクトとして扱う。変数名には `state` または `current_state` を使用する。
 
 ### CriticScore（評価器スコア）
-Criticが出力する評価結果のデータモデル。以下の3つのスコア（各1〜5）で構成される:
+Criticが出力する評価結果のデータモデル。以下の3つのスコア（各1〜5）と診断用フィールドで構成される:
 - `temporal_consistency`（時間的整合性）: 過去の日記・状態との矛盾がないか
 - `emotional_plausibility`（感情的妥当性）: イベントに対する感情変化が自然か
 - `persona_deviation`（ペルソナ維持度）: キャラクター設定からの逸脱がないか
+- `hook_strength`（フック強度）: 0.0〜1.0 の診断専用フィールド。日記末尾の「続きを読みたい」度を測定。Pass/Reject判定には使用されない
 - `reject_reason`: リジェクト時の理由（Optional）
 - `revision_instruction`: 修正指示（Optional）
 
-**合格基準:** 全スコアが3以上で Pass。1つでも3未満があれば Reject。
+**合格基準:** 全スコア（`temporal_consistency`, `emotional_plausibility`, `persona_deviation`）が3以上で Pass。1つでも3未満があれば Reject。`hook_strength` は判定に影響しない。
 
 ### EMOTION_SENSITIVITY（感情感度係数）
 イベントの `emotional_impact` に対して各感情パラメータがどの程度反応するかを定義するハイパーパラメータ。
@@ -165,6 +166,17 @@ Phase 1 段階で deviation 超過を防止する。`pipeline.py` の `_DEVIATIO
 ### prev_endings_text（過去の余韻テキスト注入）
 過去の日記の余韻（末尾段落）原文を Generator プロンプトに注入し、テキストレベルの余韻重複を
 事前に回避する機構。`prev_openings_text`（冒頭テキスト注入）と対をなす。
+
+### prev_day_ending（前日の末尾テキスト）
+前日の日記末尾段落を単独で Generator プロンプトに注入し、Day 2以降の冒頭で前日の出来事・感情・人物に
+具体的に言及させるための機構。`prev_endings`（複数日の蓄積リスト）や `prev_endings_text`（テキスト重複回避用リスト）と異なり、
+直近1日分のみを参照する。`pipeline.py` の `_extract_ending()` で抽出される。
+
+### hook_strength（フック強度）
+CriticScore の診断専用フィールド（0.0〜1.0）。日記末尾の「未解決フック」の強度を測定する。
+余韻（読後感を残す表現、文章を閉じる効果）とフック（読者が続きを気にする要素、文章を開く効果）を区別し、
+フックの有無と強度を定量化する。Pass/Reject 判定には使用されず、`generation_log.json` への記録のみに使用される。
+Layer 3 (LLMJudge) が評価し、`_compute_final_score()` で最終スコアに転送される。
 
 ### フォールバック (Fallback)
 エラー発生時に実行される代替処理。Self-Healingの具体的な実装を指す。

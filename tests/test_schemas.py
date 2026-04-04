@@ -252,6 +252,37 @@ class TestCriticScoreRange:
             _make_critic_score(**{field: value})
 
 
+class TestCriticScoreHookStrength:
+    """CriticScore の hook_strength フィールドテスト。"""
+
+    def test_hook_strength_default(self) -> None:
+        """hook_strength のデフォルト値が 0.0 であること。"""
+        score = _make_critic_score()
+        assert score.hook_strength == 0.0
+
+    def test_hook_strength_valid(self) -> None:
+        """hook_strength が 0.0〜1.0 で受け入れられること。"""
+        score = _make_critic_score(hook_strength=0.7)
+        assert score.hook_strength == pytest.approx(0.7)
+
+    def test_hook_strength_boundaries(self) -> None:
+        """hook_strength の境界値 0.0 と 1.0 が受け入れられること。"""
+        score_min = _make_critic_score(hook_strength=0.0)
+        assert score_min.hook_strength == 0.0
+        score_max = _make_critic_score(hook_strength=1.0)
+        assert score_max.hook_strength == 1.0
+
+    def test_hook_strength_out_of_range_high(self) -> None:
+        """hook_strength が 1.0 超の場合 ValidationError。"""
+        with pytest.raises(ValidationError):
+            _make_critic_score(hook_strength=1.5)
+
+    def test_hook_strength_out_of_range_low(self) -> None:
+        """hook_strength が 0.0 未満の場合 ValidationError。"""
+        with pytest.raises(ValidationError):
+            _make_critic_score(hook_strength=-0.1)
+
+
 class TestCriticScoreRejectValidation:
     """CriticScore の Reject 時必須フィールドテスト。"""
 
