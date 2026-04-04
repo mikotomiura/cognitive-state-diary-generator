@@ -1884,3 +1884,42 @@ class TestEndingTextOverlapValidation:
             prev_endings_text=prev_endings,
         )
         assert not any("余韻テキスト" in v for v in violations)
+
+
+# --- 末尾フックの弱さ検出 (項目11) ---
+
+
+class TestWeakHookDetection:
+    """_validate_structural_constraints の末尾フック弱さ検出テスト。"""
+
+    def test_weak_rhetorical_hook_detected(self) -> None:
+        """弱い修辞疑問で閉じる日記が構造的違反として検出される。"""
+        diary = "# テスト\n\nテスト本文。この金文字は、何年分の重みを覚えているのだろう......"
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, current_day=2,
+        )
+        assert any("修辞疑問" in v for v in violations)
+
+    def test_strong_rhetorical_hook_allowed(self) -> None:
+        """具体的な人物に紐づく疑問はフックとして許可される。"""
+        diary = "# テスト\n\nテスト本文。あの時の那由他さんの沈黙は何だったのだろう。"
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, current_day=2,
+        )
+        assert not any("修辞疑問" in v for v in violations)
+
+    def test_emotional_conclusion_hook_detected(self) -> None:
+        """感情の結論で閉じる日記が構造的違反として検出される。"""
+        diary = "# テスト\n\nテスト本文。そのことが、なぜか心地よい。"
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, current_day=6,
+        )
+        assert any("感情の結論" in v for v in violations)
+
+    def test_hook_check_skipped_day7(self) -> None:
+        """Day 7 ではフック弱さチェックがスキップされる。"""
+        diary = "# テスト\n\nテスト本文。そのことが、なぜか心地よい。"
+        violations = _validate_structural_constraints(
+            diary, [], [], [], {}, current_day=7,
+        )
+        assert not any("感情の結論" in v for v in violations)

@@ -164,6 +164,7 @@ class Actor:
         prev_openings_text: list[str] | None = None,
         prev_endings_text: list[str] | None = None,
         prev_day_ending: str = "",
+        structural_violations: list[str] | None = None,
     ) -> str:
         """Phase 2: 更新された状態に基づきブログ日記本文を生成する。
 
@@ -189,6 +190,7 @@ class Actor:
             prev_openings_text: 過去の冒頭テキストリスト。テキストレベル重複回避のためプロンプトに注入する。
             prev_endings_text: 過去の余韻テキストリスト。テキストレベル重複回避のためプロンプトに注入する。
             prev_day_ending: 前日の日記の末尾段落テキスト。前日接続のためプロンプトに注入する。
+            structural_violations: 前回試行の構造的制約違反リスト。リトライ時に critical_constraints を強化する。
 
         Returns:
             生成されたブログ日記テキスト (Markdown)。
@@ -215,6 +217,7 @@ class Actor:
             prev_openings_text,
             prev_endings_text,
             prev_day_ending,
+            structural_violations,
         )
 
         logger.debug(
@@ -305,6 +308,7 @@ class Actor:
         prev_openings_text: list[str] | None = None,
         prev_endings_text: list[str] | None = None,
         prev_day_ending: str = "",
+        structural_violations: list[str] | None = None,
     ) -> str:
         """Phase 2 用の User Prompt を構築する。
 
@@ -328,6 +332,7 @@ class Actor:
             prev_openings_text: 過去の冒頭テキストリスト。
             prev_endings_text: 過去の余韻テキストリスト。
             prev_day_ending: 前日の日記の末尾段落テキスト。前日接続用。
+            structural_violations: 前回試行の構造的制約違反。リトライ時に制約を強化する。
 
         Returns:
             展開済みの User Prompt テキスト。
@@ -468,6 +473,30 @@ class Actor:
             forbidden_op = [name for name, cnt in op_counts.items() if cnt >= op_limits.get(name, 3)]
             if forbidden_op:
                 critical_lines.append(f"- 書き出しに「{'」「'.join(forbidden_op)}」は使用禁止 (上限到達)")
+
+        # フック制約 (Day 1-6)
+        if event.day <= 6:
+            has_hook_violation = structural_violations and any(
+                "修辞疑問" in v or "感情の結論" in v for v in structural_violations
+            )
+            if has_hook_violation:
+                # リトライ時: 具体的な修正例付きの強化版制約
+                critical_lines.append(
+                    "- **【前回違反・フック修正必須】** 前回の生成で末尾フックが弱いと判定されました。"
+                    "最後2文以内に以下のいずれかの強いフックを1つだけ埋め込んでください:\n"
+                    "  (a) 予告的行動: 「明日、那由他さんにもう一度聞いてみよう。」\n"
+                    "  (b) 未回収の出来事: 「あの棚の奥に見えた背表紙が、まだ気になっている。」\n"
+                    "  (c) 未解決の違和感: 「でも、あの時の沈黙には、まだ何か隠れている。」\n"
+                    "  ※「〜だろう」「〜だろうか」で終わる修辞疑問は絶対禁止\n"
+                    "  ※「心地よい」「安心した」「嬉しい」等の感情で閉じることは絶対禁止"
+                )
+            else:
+                critical_lines.append(
+                    "- **【フック必須】** 最後2文以内に未解決フック (未回収の出来事・予告的行動・"
+                    "解決されていない違和感) を1つだけ埋め込んでください。"
+                    " 「〜だろうか」で終わる弱い修辞疑問や、「心地よい」「安心した」等の"
+                    "感情の結論で閉じることは禁止です"
+                )
 
         # 書き出し・余韻パターンの必須遵守を常に追加
         critical_lines.append(

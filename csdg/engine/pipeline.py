@@ -605,6 +605,40 @@ def _validate_structural_constraints(
         over = body_len - 420
         violations.append(f"本文が{body_len}文字です。約420文字 (450文字以下) に削減してください (現在{over}文字超過)")
 
+    # 11. 末尾フックの弱さチェック (Day 1-6 のみ)
+    if current_day <= 6:
+        ending = _extract_ending(diary_text)
+        if ending:
+            ending_sentences = [s.strip() for s in re.split(r"[。]", ending) if s.strip()]
+            last_sentence = ending_sentences[-1] if ending_sentences else ""
+            clean_last = re.sub(r"[。.…\s]+$", "", last_sentence)
+
+            # Day2型: 弱い修辞疑問 (「〜だろう」等で終わり、具体的な人物への言及がない場合)
+            weak_rhetorical_endings = ("だろう", "だろうか", "のだろう", "のだろうか")
+            if any(clean_last.endswith(kw) for kw in weak_rhetorical_endings):
+                has_specific_subject = any(
+                    name in last_sentence for name in ("那由他", "ミナ", "店主")
+                )
+                if not has_specific_subject:
+                    violations.append(
+                        "末尾が弱い修辞疑問 (「〜だろう」) で閉じています。"
+                        "具体的な人物・出来事に紐づいた疑問か、"
+                        "別の種類のフック (予告的行動・未回収の出来事等) に変更してください。"
+                    )
+
+            # Day6型: 感情の結論で閉じている
+            emotional_conclusion_markers = (
+                "心地よい", "安心した", "嬉しい", "嬉しかった",
+                "不安だ", "寂しい", "悲しい", "楽になった",
+                "すっきりした", "ほっとした", "満足", "納得",
+            )
+            if any(marker in clean_last for marker in emotional_conclusion_markers):
+                violations.append(
+                    "末尾が感情の結論 (「心地よい」等) で閉じています。"
+                    "フックは文章を「開く」ものです。感情で閉じず、"
+                    "未解決の違和感や予告的行動で終えてください。"
+                )
+
     return violations
 
 
@@ -999,6 +1033,7 @@ class PipelineRunner:
 
         is_high_impact = abs(event.emotional_impact) > 0.7
         structural_retry_used = False
+        pending_structural_violations: list[str] | None = None
         attempt_idx = 0
 
         while attempt_idx < self._config.max_retries:
@@ -1032,7 +1067,9 @@ class PipelineRunner:
                 prev_openings_text=prev_openings_text,
                 prev_endings_text=prev_endings_text,
                 prev_day_ending=prev_day_ending,
+                structural_violations=pending_structural_violations,
             )
+            pending_structural_violations = None
             phase2_ms = int((time.monotonic() - phase2_start) * 1000)
             phase2_total_ms += phase2_ms
             logger.info("[Day %d] Phase 2: Content Generation ... OK (%.1fs)", day, phase2_ms / 1000)
@@ -1089,8 +1126,22 @@ class PipelineRunner:
                 # 構造的制約違反がある場合、ボーナス1回再試行 (リトライ予算を消費しない)
                 if structural_violations and not structural_retry_used:
                     structural_retry_used = True
+                    pending_structural_violations = structural_violations
                     violation_text = "\n".join(f"- {v}" for v in structural_violations)
-                    revision_instruction = _sanitize_revision(f"構造的制約違反:\n{violation_text}")
+                    # フック関連違反には具体的な修正例を付与
+                    hook_guidance = ""
+                    if any("修辞疑問" in v or "感情の結論" in v for v in structural_violations):
+                        hook_guidance = (
+                            "\n\n【フック修正の具体例】"
+                            "\nNG: 「〜だろう」「〜のだろうか」(弱い修辞疑問)"
+                            "\nNG: 「心地よい」「安心した」(感情の結論)"
+                            "\n○ 「明日、那由他さんにもう一度聞いてみよう。」(予告的行動)"
+                            "\n○ 「あの棚の奥に見えた背表紙が、まだ気になっている。」(未回収の出来事)"
+                            "\n○ 「でも、あの時の沈黙には、まだ何か隠れている。」(未解決の違和感)"
+                        )
+                    revision_instruction = _sanitize_revision(
+                        f"構造的制約違反:\n{violation_text}{hook_guidance}"
+                    )
                     logger.info(
                         "[Day %d] Critic Pass (score: %d/%d/%d) + %d violation(s) -> ボーナス再試行",
                         day,
