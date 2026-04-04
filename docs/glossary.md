@@ -168,8 +168,10 @@ Phase 1 段階で deviation 超過を防止する。`pipeline.py` の `_DEVIATIO
 事前に回避する機構。`prev_openings_text`（冒頭テキスト注入）と対をなす。
 
 ### prev_day_ending（前日の末尾テキスト）
-前日の日記末尾段落を単独で Generator プロンプトに注入し、Day 2以降の冒頭で前日の出来事・感情・人物に
-具体的に言及させるための機構。`prev_endings`（複数日の蓄積リスト）や `prev_endings_text`（テキスト重複回避用リスト）と異なり、
+前日の日記末尾段落を Generator および Critic の両プロンプトに注入する機構。
+Generator では Day 2以降の冒頭で前日の出来事・感情・人物に具体的に言及させ、
+Critic では前日フックの回収状況を検証する（hook_strength の採点に影響）。
+`prev_endings`（複数日の蓄積リスト）や `prev_endings_text`（テキスト重複回避用リスト）と異なり、
 直近1日分のみを参照する。`pipeline.py` の `_extract_ending()` で抽出される。
 
 ### hook_strength（フック強度）

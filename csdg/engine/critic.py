@@ -594,6 +594,7 @@ class LLMJudge:
         deviation: dict[str, float],
         layer1_result: LayerScore,
         layer2_result: LayerScore,
+        prev_day_ending: str = "",
     ) -> tuple[LayerScore, float]:
         """LLM による定性評価を実行する。
 
@@ -606,6 +607,7 @@ class LLMJudge:
             deviation: 期待変動との乖離。
             layer1_result: RuleBasedValidator の結果。
             layer2_result: StatisticalChecker の結果。
+            prev_day_ending: 前日の日記の末尾段落テキスト。フック回収検証用。
 
         Returns:
             (LayerScore, inverse_estimation_score) のタプル。
@@ -620,6 +622,7 @@ class LLMJudge:
             deviation=deviation,
             layer1_result=layer1_result,
             layer2_result=layer2_result,
+            prev_day_ending=prev_day_ending,
         )
 
         critic_score = await self._client.generate_structured(
@@ -679,6 +682,7 @@ class LLMJudge:
         deviation: dict[str, float],
         layer1_result: LayerScore,
         layer2_result: LayerScore,
+        prev_day_ending: str = "",
     ) -> str:
         """Layer 1/2 の結果を含む Critic プロンプトを構築する。"""
         template = load_prompt(self._prompts_dir, "Prompt_Critic.md")
@@ -717,6 +721,7 @@ class LLMJudge:
             expected_delta=expected_delta,
             deviation=deviation,
             layer_results=layer_context,
+            prev_day_ending=prev_day_ending if prev_day_ending else "(初日のため参照なし)",
         )
 
 
@@ -759,6 +764,7 @@ class CriticPipeline:
         diary_text: str,
         event: DailyEvent,
         prev_diary: str | None = None,
+        prev_day_ending: str = "",
     ) -> CriticResult:
         """3層評価を実行し、CriticResult を返す。
 
@@ -768,6 +774,7 @@ class CriticPipeline:
             diary_text: 評価対象の日記テキスト。
             event: 当日のイベント。
             prev_diary: 前日の日記テキスト (重複チェック用)。
+            prev_day_ending: 前日の日記の末尾段落テキスト (フック回収検証用)。
 
         Returns:
             CriticResult (各層スコア + 統合 CriticScore)。
@@ -805,6 +812,7 @@ class CriticPipeline:
             deviation,
             layer1,
             layer2,
+            prev_day_ending=prev_day_ending,
         )
 
         # Veto 判定
@@ -993,6 +1001,7 @@ class Critic:
         diary_text: str,
         event: DailyEvent,
         prev_diary: str | None = None,
+        prev_day_ending: str = "",
     ) -> CriticResult:
         """日記テキストと状態を評価し、CriticResult (3層詳細) を返す。
 
@@ -1002,6 +1011,7 @@ class Critic:
             diary_text: Phase 2 で生成された日記テキスト。
             event: 当日のイベント定義。
             prev_diary: 前日の日記テキスト (重複チェック用)。
+            prev_day_ending: 前日の日記の末尾段落テキスト (フック回収検証用)。
 
         Returns:
             CriticResult インスタンス (3層スコア + 統合スコア)。
@@ -1012,4 +1022,5 @@ class Critic:
             diary_text,
             event,
             prev_diary=prev_diary,
+            prev_day_ending=prev_day_ending,
         )

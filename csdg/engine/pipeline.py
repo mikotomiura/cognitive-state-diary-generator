@@ -1065,6 +1065,7 @@ class PipelineRunner:
                 diary_text,
                 event,
                 prev_diary=prev_diary,
+                prev_day_ending=prev_day_ending,
             )
             critic_score = critic_result.final_score
             last_critic_result = critic_result

@@ -1473,3 +1473,117 @@ class TestHighImpactEmotionalCollapse:
         )
         assert result.details.get("emotional_collapse_failed") is True
         assert result.persona_deviation <= 1.0
+
+
+# ====================================================================
+# LLMJudge prev_day_ending 転送テスト
+# ====================================================================
+
+
+class TestLLMJudgePrevDayEnding:
+    """LLMJudge が prev_day_ending を Critic プロンプトに含めることのテスト."""
+
+    def test_build_prompt_includes_prev_day_ending(
+        self,
+        test_config: CSDGConfig,
+    ) -> None:
+        """prev_day_ending が渡された場合、プロンプトに含まれること."""
+        from csdg.engine.critic import LLMJudge
+
+        # prev_day_ending を含むテンプレートを持つプロンプトディレクトリを作成
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompts_dir = Path(tmpdir)
+            persona = prompts_dir / "System_Persona.md"
+            persona.write_text("You are Tokomi.", encoding="utf-8")
+
+            critic_prompt = prompts_dir / "Prompt_Critic.md"
+            critic_prompt.write_text(
+                "Evaluate.\n"
+                "diary: {diary_text}\n"
+                "state: {current_state}\n"
+                "event: {event}\n"
+                "human_condition: {human_condition}\n"
+                "expected_delta: {expected_delta}\n"
+                "deviation: {deviation}\n"
+                "layer_results: {layer_results}\n"
+                "prev_day_ending: {prev_day_ending}\n",
+                encoding="utf-8",
+            )
+
+            judge = LLMJudge(AsyncMock(), test_config, prompts_dir)
+            prev = _make_state()
+            curr = _make_state(stress=0.0)
+            event = _make_event()
+            layer = LayerScore(
+                temporal_consistency=3.0,
+                emotional_plausibility=3.0,
+                persona_deviation=3.0,
+            )
+
+            ending = "空になったカップを見つめて、席を立った。"
+            prompt = judge._build_prompt(
+                diary_text="テスト日記",
+                curr_state=curr,
+                event=event,
+                expected_delta={"stress": 0.0},
+                deviation={"stress": 0.0},
+                layer1_result=layer,
+                layer2_result=layer,
+                prev_day_ending=ending,
+            )
+
+            assert ending in prompt
+
+    def test_build_prompt_empty_prev_day_ending(
+        self,
+        test_config: CSDGConfig,
+    ) -> None:
+        """prev_day_ending が空の場合、フォールバックテキストが含まれること."""
+        from csdg.engine.critic import LLMJudge
+
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompts_dir = Path(tmpdir)
+            persona = prompts_dir / "System_Persona.md"
+            persona.write_text("You are Tokomi.", encoding="utf-8")
+
+            critic_prompt = prompts_dir / "Prompt_Critic.md"
+            critic_prompt.write_text(
+                "Evaluate.\n"
+                "diary: {diary_text}\n"
+                "state: {current_state}\n"
+                "event: {event}\n"
+                "human_condition: {human_condition}\n"
+                "expected_delta: {expected_delta}\n"
+                "deviation: {deviation}\n"
+                "layer_results: {layer_results}\n"
+                "prev_day_ending: {prev_day_ending}\n",
+                encoding="utf-8",
+            )
+
+            judge = LLMJudge(AsyncMock(), test_config, prompts_dir)
+            curr = _make_state(stress=0.0)
+            event = _make_event()
+            layer = LayerScore(
+                temporal_consistency=3.0,
+                emotional_plausibility=3.0,
+                persona_deviation=3.0,
+            )
+
+            prompt = judge._build_prompt(
+                diary_text="テスト日記",
+                curr_state=curr,
+                event=event,
+                expected_delta={"stress": 0.0},
+                deviation={"stress": 0.0},
+                layer1_result=layer,
+                layer2_result=layer,
+                prev_day_ending="",
+            )
+
+            assert "(初日のため参照なし)" in prompt
