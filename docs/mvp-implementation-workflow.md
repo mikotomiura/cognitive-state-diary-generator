@@ -172,6 +172,7 @@ requirement.md, design.md, tasklist.md を作成し、
 - temporal_consistency: int — 1〜5（範囲外は ValidationError）
 - emotional_plausibility: int — 1〜5
 - persona_deviation: int — 1〜5
+- hook_strength: float — 0.0〜1.0（診断専用、Pass/Reject判定には不使用、default=0.0）
 - reject_reason: str | None = None
 - revision_instruction: str | None = None
 - model_validator で「Reject時は reject_reason と revision_instruction が必須」を検証
@@ -959,7 +960,7 @@ def generate_state_trajectory(
       - X軸: Day (1〜7)
       - Y軸: -1.0〜1.0
       - 各Dayのイベントタイプをマーカー色で表示
-    - 下段: temporal_consistency, emotional_plausibility, persona_deviation の折れ線
+    - 下段: temporal_consistency, emotional_plausibility, persona_deviation の折れ線 (hook_strength は診断専用のためグラフ非表示)
       - X軸: Day (1〜7)
       - Y軸: 1〜5
       - スコア3の位置に赤破線（合格ライン）

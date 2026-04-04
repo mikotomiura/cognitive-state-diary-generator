@@ -391,6 +391,7 @@ CriticPipeline:
     - 従来の Prompt_Critic.md による LLM 評価
     - Layer 1/2 の結果をコンテキストとして注入
     - 逆推定一致チェック: 状態-文章の因果整合性スコア (1-5)
+    - hook_strength (0.0〜1.0): フック強度の診断値 (Pass/Reject判定には不使用)
 ```
 
 **最終スコア算出 (Veto権付き):**
@@ -405,6 +406,7 @@ else:
         llm_score[axis] * 0.25
     )
 # 逆推定一致スコア <= 2.0 の場合、emotional軸にもveto適用
+# hook_strength は L3 から転送され CriticScore に記録されるが、加重平均には含まれない
 ```
 
 **致命的違反の定義:**
@@ -415,6 +417,7 @@ else:
 重みは `config.py` の `CriticWeights`、veto上限は `VetoCaps` で設定可能。
 
 新スキーマ: `LayerScore`, `CriticResult` (+ `inverse_estimation_score`, `veto_applied`), `LLMDeltaResponse`
+診断専用フィールド: `hook_strength` (0.0〜1.0) — L3 が評価し CriticScore に転送。Pass/Reject 判定には不使用
 
 ### 3.3.1 Critic ログ蓄積と軽量フィードバック (`engine/critic_log.py`)
 
@@ -692,9 +695,9 @@ class PipelineLog(BaseModel):
 
 #### `engine/actor.py` — Actor
 - Phase 1: `update_state(prev_state, event, long_term_context?) -> CharacterState`
-- Phase 2: `generate_diary(state, event, revision?, long_term_context?, temperature?, prev_endings?, prev_images?, used_openings?, used_structures?, used_philosophers?, used_ending_patterns?, theme_word_totals?, prev_rhetorical?) -> str`
+- Phase 2: `generate_diary(state, event, revision?, long_term_context?, temperature?, prev_endings?, prev_images?, used_openings?, used_structures?, used_philosophers?, used_ending_patterns?, theme_word_totals?, prev_rhetorical?, scene_marker_days?, prev_openings_text?, prev_endings_text?, prev_day_ending?) -> str`
 - プロンプトの読み込みとテンプレート展開
-- `prev_images`/`used_openings`/`prev_endings`/`used_ending_patterns`/`theme_word_totals`/`prev_rhetorical` のプロンプト注入セクション構築
+- `prev_images`/`used_openings`/`prev_endings`/`used_ending_patterns`/`theme_word_totals`/`prev_rhetorical`/`prev_day_ending` のプロンプト注入セクション構築
 - 長期記憶コンテキストの整形（`_format_long_term_context()`）
 - LLM API呼び出し（`LLMClient` 経由）
 
@@ -718,6 +721,7 @@ class PipelineLog(BaseModel):
   - `_validate_structural_constraints()`: 生成後の構造的制約バリデーション (5項目)
   - `_count_theme_words()`: 主題語の出現回数カウント → `theme_word_totals`
   - `_extract_rhetorical_questions()`: 修辞疑問文の抽出 → `prev_rhetorical`
+  - `_extract_ending()` による `prev_day_ending_text` の更新（次 Day の前日接続用）
 - `_sanitize_revision()`: Critic の `revision_instruction` を制御文字除去 + XMLデリミタで安全化
 - 生成記録の収集
 
@@ -754,6 +758,7 @@ class PipelineLog(BaseModel):
          + "## 使用済み場面構造パターン" + used_structures (全パターン追跡+連続検出+代替提示)
          + "## 主題語の使用状況" + theme_word_totals (累計回数・ソフト/ハードリミット+イベント文脈警告)
          + "## 使用済み修辞疑問文" + prev_rhetorical (直近5件の問いかけ)
+         + (前日末尾あり) "## 前日の末尾テキスト" + prev_day_ending (前日接続用)
          + (長期記憶あり) "## 長期記憶" + beliefs/themes/turning_points
 ```
 

@@ -195,6 +195,26 @@ class TestJudge:
         )
         assert judge(score) is False
 
+    def test_judge_ignores_hook_strength(self) -> None:
+        """judge() が hook_strength の値に関わらず既存3軸のみで判定すること。"""
+        score_pass = CriticScore(
+            temporal_consistency=3,
+            emotional_plausibility=3,
+            persona_deviation=3,
+            hook_strength=0.0,
+        )
+        assert judge(score_pass) is True
+
+        score_fail = CriticScore(
+            temporal_consistency=2,
+            emotional_plausibility=4,
+            persona_deviation=4,
+            hook_strength=1.0,
+            reject_reason="temporal が低い",
+            revision_instruction="過去への言及を追加",
+        )
+        assert judge(score_fail) is False
+
 
 # ====================================================================
 # Layer 1: RuleBasedValidator のテスト

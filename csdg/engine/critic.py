@@ -646,6 +646,7 @@ class LLMJudge:
                     "reject_reason": critic_score.reject_reason,
                     "revision_instruction": critic_score.revision_instruction,
                     "inverse_estimation_score": inverse_score,
+                    "hook_strength": critic_score.hook_strength,
                 },
             ),
             inverse_score,
@@ -921,10 +922,15 @@ class CriticPipeline:
         if is_reject and not revision_instruction:
             revision_instruction = "Layer 1/2 で検出された問題を修正してください"
 
+        # L3 (LLMJudge) が返した hook_strength を最終スコアに転送
+        l3_hook = layer3.details.get("hook_strength", 0.0)
+        hook_val = max(0.0, min(1.0, float(l3_hook))) if isinstance(l3_hook, (int, float)) else 0.0
+
         return CriticScore(
             temporal_consistency=scores["temporal_consistency"],
             emotional_plausibility=scores["emotional_plausibility"],
             persona_deviation=scores["persona_deviation"],
+            hook_strength=hook_val,
             reject_reason=str(reject_reason) if reject_reason else None,
             revision_instruction=str(revision_instruction) if revision_instruction else None,
         )

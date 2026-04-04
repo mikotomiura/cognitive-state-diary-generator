@@ -326,8 +326,8 @@ main.py
 |---|---|---|---|
 | `System_Persona.md` | キャラクターの不変ルール。全PhaseのSystemプロンプトとして使用 | 全Phase | なし（静的） |
 | `Prompt_StateUpdate.md` | 感情推移の計算ルール | Phase 1 | `{previous_state}`, `{event}`, `{memory_buffer}` |
-| `Prompt_Generator.md` | ブログ記事の構成・感情の言語化ルール | Phase 2 | `{critical_constraints}`, `{current_state}`, `{event}`, `{memory_buffer}`, `{revision_instruction}`, `{prev_endings}`, `{prev_images}`, `{used_openings}` |
-| `Prompt_Critic.md` | 評価基準・採点基準（1-5スコアの定義） | Phase 3 | `{diary_text}`, `{current_state}`, `{event}`, `{expected_delta}`, `{deviation}` |
+| `Prompt_Generator.md` | ブログ記事の構成・感情の言語化ルール・前日接続・フック指示 | Phase 2 | `{critical_constraints}`, `{current_state}`, `{event}`, `{memory_buffer}`, `{human_condition}`, `{revision_instruction}`, `{prev_endings}`, `{prev_images}`, `{used_openings}` + 動的注入: `prev_day_ending` |
+| `Prompt_Critic.md` | 評価基準・採点基準（1-5スコアの定義）+ hook_strength 診断 | Phase 3 | `{diary_text}`, `{current_state}`, `{event}`, `{human_condition}`, `{expected_delta}`, `{deviation}`, `{layer_results}` |
 | `Prompt_MemoryExtract.md` | 長期記憶の信念・テーマ抽出 | メモリ更新時 | `{evicted_entries}`, `{current_beliefs}`, `{current_themes}` |
 | `System_MemoryManager.md` | メモリ管理システムプロンプト | メモリ更新時 | なし（静的） |
 
