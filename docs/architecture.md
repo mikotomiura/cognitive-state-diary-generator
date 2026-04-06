@@ -548,7 +548,7 @@ def clamp(value: float, min_val: float = -1.0, max_val: float = 1.0) -> float:
 from pydantic import field_validator
 
 class CharacterState(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    """パイプライン中で model_copy(update=...) により頻繁に更新されるため frozen にしない。"""
 
     fatigue: float          # 0.0〜1.0 (clamp_fatigue)
     motivation: float       # -1.0〜1.0 (clamp_bipolar)
@@ -665,7 +665,7 @@ class CSDGConfig(BaseSettings):
 #### `schemas.py` — Pydanticモデル定義
 - `DailyEvent` — 日次イベント
 - `HumanCondition` — イベント非依存の生物的・心理的状態
-- `CharacterState` — キャラクター内部状態（`field_validator` によるクランプ付き、`human_condition` サブモデル含む、`frozen=True`）
+- `CharacterState` — キャラクター内部状態（`field_validator` によるクランプ付き、`human_condition` サブモデル含む。`model_copy(update=...)` で更新するため frozen にしない）
 - `EmotionalDelta` — パラメータ変化量
 - `LLMDeltaResponse` — LLM提案のdelta + 理由
 - `CriticScore` — 評価器スコア（`hook_strength` 診断フィールド含む）

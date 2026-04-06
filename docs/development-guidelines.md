@@ -262,7 +262,7 @@ class CharacterState(BaseModel):
 - すべてのフィールドに `Field(description=...)` を付ける（Structured Outputs のスキーマ記述に使用される）
 - デフォルト値を持つフィールドには `default` または `default_factory` を明示する
 - バリデーションロジックは `field_validator` で宣言的に記述する（手続き的なチェックを外部に書かない）
-- `model_config` を使用して `frozen=True`（イミュータブル）を検討する。ただし `memory_buffer` のような可変フィールドがある場合は `model_copy(update=...)` パターンを使用する
+- イミュータブルなデータモデルには `model_config` で `frozen=True` を設定する（現在は `DailyEvent` のみが該当）。`CharacterState` のようにパイプライン中で `model_copy(update=...)` により頻繁に更新されるモデルでは frozen にしない
 
 ### 3.2 モデルの変更手順
 
