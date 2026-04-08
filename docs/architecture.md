@@ -474,7 +474,9 @@ Phase 3 評価
   │     (1) critical_constraints の強化版フック制約 (具体例付き)
   │     (2) revision_instruction のフック修正ガイダンス
   │   ↓
-  │   Phase 2 再生成 → Phase 3 再評価 → 最終結果を採用
+  │   Phase 2 再生成 → Phase 3 再評価 → Best-of-N で最良候補を採用
+  │   (ボーナス候補と初回候補を _select_best_candidate で比較し、
+  │    adjusted_score = total_score - structural_violation_count が高い方を選択)
   │
   └─ Reject → Phase 2 再生成 (temperature=0.60, revision_instruction 注入)
        ↓ Reject
