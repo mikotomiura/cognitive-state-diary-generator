@@ -1172,7 +1172,26 @@ class PipelineRunner:
                         critic_score.persona_deviation,
                         phase3_ms / 1000,
                     )
-                final_diary = diary_text
+                # Best-of-N: 複数候補がある場合は最良候補を選択
+                # (構造的制約のボーナス再試行で last-write-wins になっていた問題の修正)
+                if len(candidates) > 1:
+                    best = self._select_best_candidate(candidates)
+                    if best.attempt != candidate.attempt:
+                        logger.info(
+                            "[Day %d] Best-of-N: candidate %d (total=%d, viol=%d) "
+                            "selected over latest candidate %d (total=%d, viol=%d)",
+                            day,
+                            best.attempt,
+                            best.total_score,
+                            best.structural_violation_count,
+                            candidate.attempt,
+                            candidate.total_score,
+                            candidate.structural_violation_count,
+                        )
+                    final_diary = best.diary_text
+                    curr_state = best.state
+                else:
+                    final_diary = diary_text
                 break
 
             logger.info(

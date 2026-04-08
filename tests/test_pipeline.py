@@ -359,6 +359,53 @@ class TestBestOfN:
         assert best.diary_text == "high"
         assert best.total_score == 8
 
+    @pytest.mark.asyncio()
+    async def test_bonus_structural_retry_best_of_n(
+        self,
+        runner: PipelineRunner,
+        mock_actor: Actor,
+        mock_critic: Critic,
+        state: CharacterState,
+    ) -> None:
+        """ボーナス再試行後、last-write-wins ではなく Best-of-N で最良候補を返す。
+
+        attempt 0: Critic Pass (high score) + structural violations → ボーナス再試行
+        attempt 1: Critic Pass (lower score) + no violations → break
+        期待: attempt 0 の日記が返却される (total_score 15-1=14 > 12-0=12)
+        """
+        assert isinstance(mock_actor, AsyncMock)
+        assert isinstance(mock_critic, AsyncMock)
+
+        updated_state = state.model_copy(update={"stress": 0.0})
+        mock_actor.update_state.return_value = (updated_state, "テストreason")
+
+        diary_high = "DIARY_HIGH_SCORE: " + "a" * 50  # attempt 0 の日記
+        diary_low = "DIARY_LOW_SCORE: " + "b" * 50   # attempt 1 (ボーナス) の日記
+        mock_actor.generate_diary.side_effect = [diary_high, diary_low]
+
+        # attempt 0: total_score=15 (5+5+5), judge Pass
+        high_score = CriticScore(temporal_consistency=5, emotional_plausibility=5, persona_deviation=5)
+        # attempt 1: total_score=12 (4+4+4), judge Pass
+        lower_score = CriticScore(temporal_consistency=4, emotional_plausibility=4, persona_deviation=4)
+        mock_critic.evaluate_full.side_effect = [
+            _wrap_as_result(high_score),
+            _wrap_as_result(lower_score),
+        ]
+
+        with patch(
+            "csdg.engine.pipeline._validate_structural_constraints",
+            side_effect=[["フック弱さ違反: 修辞疑問で閉じている"], []],
+        ):
+            event = _make_event(1)
+            record = await runner.run_single_day(event, state, day=2)
+
+        # Best-of-N: attempt 0 (adjusted=15-1=14) > attempt 1 (adjusted=12-0=12)
+        assert record.diary_text == diary_high, (
+            f"Best-of-N が機能していない: last-write-wins で {record.diary_text!r} が選ばれている"
+        )
+        assert not record.fallback_used
+        assert record.retry_count == 1  # candidates に2つある
+
 
 # ====================================================================
 # Phase 1 フォールバック: ValidationError 3回 → 前日状態コピー
