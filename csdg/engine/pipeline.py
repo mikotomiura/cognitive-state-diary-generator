@@ -616,9 +616,7 @@ def _validate_structural_constraints(
             # Day2型: 弱い修辞疑問 (「〜だろう」等で終わり、具体的な人物への言及がない場合)
             weak_rhetorical_endings = ("だろう", "だろうか", "のだろう", "のだろうか")
             if any(clean_last.endswith(kw) for kw in weak_rhetorical_endings):
-                has_specific_subject = any(
-                    name in last_sentence for name in ("那由他", "ミナ", "店主")
-                )
+                has_specific_subject = any(name in last_sentence for name in ("那由他", "ミナ", "店主"))
                 if not has_specific_subject:
                     violations.append(
                         "末尾が弱い修辞疑問 (「〜だろう」) で閉じています。"
@@ -628,9 +626,18 @@ def _validate_structural_constraints(
 
             # Day6型: 感情の結論で閉じている
             emotional_conclusion_markers = (
-                "心地よい", "安心した", "嬉しい", "嬉しかった",
-                "不安だ", "寂しい", "悲しい", "楽になった",
-                "すっきりした", "ほっとした", "満足", "納得",
+                "心地よい",
+                "安心した",
+                "嬉しい",
+                "嬉しかった",
+                "不安だ",
+                "寂しい",
+                "悲しい",
+                "楽になった",
+                "すっきりした",
+                "ほっとした",
+                "満足",
+                "納得",
             )
             if any(marker in clean_last for marker in emotional_conclusion_markers):
                 violations.append(
@@ -1139,9 +1146,7 @@ class PipelineRunner:
                             "\n○ 「あの棚の奥に見えた背表紙が、まだ気になっている。」(未回収の出来事)"
                             "\n○ 「でも、あの時の沈黙には、まだ何か隠れている。」(未解決の違和感)"
                         )
-                    revision_instruction = _sanitize_revision(
-                        f"構造的制約違反:\n{violation_text}{hook_guidance}"
-                    )
+                    revision_instruction = _sanitize_revision(f"構造的制約違反:\n{violation_text}{hook_guidance}")
                     logger.info(
                         "[Day %d] Critic Pass (score: %d/%d/%d) + %d violation(s) -> ボーナス再試行",
                         day,

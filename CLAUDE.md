@@ -111,10 +111,10 @@ python -m csdg.main --day 4    # 特定のDayのみ実行
 
 | コマンド | 用途 |
 |---|---|
-| `/add-feature` | 新機能追加ワークフロー |
-| `/fix-bug` | バグ修正ワークフロー |
-| `/refactor` | リファクタリングワークフロー |
-| `/review` | コードレビューワークフロー |
+| `/start-task` | タスク開始・作業記録初期化 |
+| `/implement feat\|fix\|refactor` | 新機能追加 / バグ修正 / リファクタリング |
+| `/review-changes` | コミット前レビュー（動的 git 取得 + 並列実行） |
+| `/finish-task` | タスク完了処理（テスト・コミット） |
 | `/run-tests` | テスト実行・分析ワークフロー |
 | `/update-docs` | ドキュメント更新ワークフロー |
 | `/add-scenario` | シナリオ(DailyEvent)追加ワークフロー |
